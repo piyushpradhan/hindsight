@@ -1,0 +1,179 @@
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import type { CompareResult, RunGraph, RunStep } from "@hindsight/shared";
+import { api, signozTraceUrl } from "../api";
+import { fmtMs, fmtTokens, fmtUsd, shortId } from "../format";
+import { OutcomeBadge } from "../components/Badge";
+import { ErrorNote } from "../components/ErrorNote";
+import { MiniStepCell } from "../components/MiniStepCell";
+
+/** Alignments reference RunStep.index values, not array positions. */
+function byIndex(steps: RunStep[]): Map<number, RunStep> {
+  return new Map(steps.map((s) => [s.index, s]));
+}
+
+function DeltaStat({ label, value, suffix }: { label: string; value: number; suffix: "usd" | "tok" | "steps" | "ms" }) {
+  const cls = value < 0 ? "ok" : value > 0 ? "bad" : "zero";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  const text =
+    suffix === "usd"
+      ? `${sign}${fmtUsd(abs)}`
+      : suffix === "tok"
+        ? `${sign}${fmtTokens(abs)}`
+        : suffix === "ms"
+          ? `${sign}${fmtMs(abs)}`
+          : `${sign}${abs}`;
+  return (
+    <div className="delta-stat">
+      <div className="d-label">{label}</div>
+      <div className={`d-value ${cls}`}>{text}</div>
+    </div>
+  );
+}
+
+export function CompareScreen() {
+  const [params] = useSearchParams();
+  const original = params.get("original") ?? "";
+  const fork = params.get("fork") ?? "";
+  const [compare, setCompare] = useState<CompareResult | null>(null);
+  const [origGraph, setOrigGraph] = useState<RunGraph | null>(null);
+  const [forkGraph, setForkGraph] = useState<RunGraph | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (!original || !fork) return;
+    let alive = true;
+    Promise.all([api.compare(original, fork), api.getRun(original), api.getRun(fork)])
+      .then(([cmp, og, fg]) => {
+        if (!alive) return;
+        setCompare(cmp);
+        setOrigGraph(og);
+        setForkGraph(fg);
+      })
+      .catch((e) => alive && setError(e));
+    return () => {
+      alive = false;
+    };
+  }, [original, fork]);
+
+  if (!original || !fork) {
+    return (
+      <div className="page">
+        <ErrorNote error={new Error("missing query params — expected /compare?original=TRACE&fork=TRACE")} />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorNote error={error} />
+      </div>
+    );
+  }
+  if (!compare || !origGraph || !forkGraph) {
+    return (
+      <div className="page">
+        <div className="loading">aligning steps…</div>
+      </div>
+    );
+  }
+
+  const origSteps = byIndex(origGraph.steps);
+  const forkSteps = byIndex(forkGraph.steps);
+  const title = compare.outcomeChanged
+    ? `Outcome changed: ${compare.original.outcome} → ${compare.fork.outcome}`
+    : `Outcome unchanged: ${compare.fork.outcome}`;
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="eyebrow">Counterfactual</div>
+        <h1>Compare</h1>
+      </div>
+
+      <div className="card verdict-card">
+        <div>
+          <div className="verdict-title">{title}</div>
+          <div className="verdict-outcomes">
+            <OutcomeBadge outcome={compare.original.outcome} />
+            <span className="verdict-arrow">── fork ──▶</span>
+            <OutcomeBadge outcome={compare.fork.outcome} />
+          </div>
+        </div>
+        <div className="delta-grid">
+          <DeltaStat label="Δ cost" value={compare.deltaCostUsd} suffix="usd" />
+          <DeltaStat label="Δ tokens" value={compare.deltaTokens} suffix="tok" />
+          <DeltaStat label="Δ steps" value={compare.deltaSteps} suffix="steps" />
+          <DeltaStat label="Δ latency" value={compare.deltaLatencyMs} suffix="ms" />
+        </div>
+      </div>
+
+      <div className="compare-cols">
+        <div className="compare-col-head">
+          original · <b>{shortId(compare.original.traceId)}</b> · {compare.original.agentId}
+        </div>
+        <div className="compare-col-head">
+          fork · <b>{shortId(compare.fork.traceId)}</b> · {compare.fork.agentId}
+        </div>
+      </div>
+
+      <div className="align-grid">
+        {compare.alignments.map((a, i) => {
+          const oStep = a.originalIndex !== undefined ? origSteps.get(a.originalIndex) : undefined;
+          const fStep = a.forkIndex !== undefined ? forkSteps.get(a.forkIndex) : undefined;
+          return [
+            <MiniStepCell
+              key={`o-${i}`}
+              step={oStep}
+              status={a.status}
+              emptyLabel="not present in original"
+            />,
+            <span key={`s-${i}`} className={`status-tag status-${a.status}`}>
+              {a.status}
+            </span>,
+            <MiniStepCell
+              key={`f-${i}`}
+              step={fStep}
+              status={a.status}
+              emptyLabel="not executed in fork"
+            />,
+          ];
+        })}
+      </div>
+
+      {compare.outputDiff && (
+        <>
+          <div className="section-label">output diff</div>
+          <pre className="diff-block">
+            {compare.outputDiff.split("\n").map((line, i) => {
+              const cls = line.startsWith("+")
+                ? line.startsWith("+++")
+                  ? "diff-meta"
+                  : "diff-add"
+                : line.startsWith("-")
+                  ? line.startsWith("---")
+                    ? "diff-meta"
+                    : "diff-del"
+                  : "";
+              return (
+                <div key={i} className={cls}>
+                  {line}
+                </div>
+              );
+            })}
+          </pre>
+        </>
+      )}
+
+      <div className="row">
+        <a className="btn btn-ghost" href={signozTraceUrl(compare.original.traceId)} target="_blank" rel="noreferrer">
+          Open original trace in SigNoz ↗
+        </a>
+        <a className="btn btn-ghost" href={signozTraceUrl(compare.fork.traceId)} target="_blank" rel="noreferrer">
+          Open fork trace in SigNoz ↗
+        </a>
+      </div>
+    </div>
+  );
+}

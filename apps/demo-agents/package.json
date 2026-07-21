@@ -1,0 +1,29 @@
+{
+  "name": "@hindsight/demo-agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed": "tsx scripts/seed.ts",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "dependencies": {
+    "@hindsight/recorder": "workspace:*",
+    "@hindsight/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3"
+  }
+}

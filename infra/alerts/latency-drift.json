@@ -1,0 +1,44 @@
+{
+  "//": "Hindsight alert :: latency drift. Anomaly rule on p95 hindsight.step.duration. SigNoz EE v0.133.0 supports anomaly detection (ruleType 'anomaly_rule'); if your build lacks it, change ruleType to 'threshold_rule' and set condition.op/target to a fixed p95 ceiling. Fires to 'hindsight-replay-engine' webhook channel -> http://localhost:4123/hooks/signoz. Metric name frozen in packages/shared/src/telemetry.ts (METRIC.STEP_DURATION). VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "alert": "Hindsight: step latency drift (p95 anomaly)",
+  "alertType": "METRIC_BASED_ALERT",
+  "ruleType": "anomaly_rule",
+  "evalWindow": "5m0s",
+  "frequency": "1m0s",
+  "condition": {
+    "compositeQuery": {
+      "queryType": "builder",
+      "panelType": "graph",
+      "builderQueries": {
+        "A": {
+          "queryName": "A",
+          "dataSource": "metrics",
+          "aggregateOperator": "p95",
+          "aggregateAttribute": { "key": "hindsight.step.duration", "dataType": "float64", "type": "Histogram", "isColumn": true },
+          "timeAggregation": "p95",
+          "spaceAggregation": "p95",
+          "filters": { "op": "AND", "items": [] },
+          "groupBy": [ { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false } ],
+          "expression": "A",
+          "disabled": false,
+          "legend": "p95 step duration {{hindsight.agent.id}}"
+        }
+      },
+      "queryFormulas": []
+    },
+    "op": ">",
+    "target": 3,
+    "matchType": "1",
+    "targetUnit": "",
+    "selectedQueryName": "A",
+    "algorithm": "standard",
+    "seasonality": "hourly",
+    "z_score_threshold": 3
+  },
+  "labels": { "severity": "warning", "team": "hindsight", "trigger": "latency" },
+  "annotations": {
+    "summary": "Latency drift: agent {{$labels.hindsight.agent.id}} p95 step duration anomalous ({{$value}})",
+    "description": "p95 step duration deviated from its seasonal baseline. Often precedes a run failure; the replay-engine records it for postmortem correlation."
+  },
+  "preferredChannels": ["hindsight-replay-engine"]
+}

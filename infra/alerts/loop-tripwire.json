@@ -1,0 +1,44 @@
+{
+  "//": "Hindsight alert :: loop tripwire (THE DEMO TRIGGER). Threshold rule, fires immediately when hindsight.loop.score >= 3. Built against SigNoz EE v0.133.0 rule schema (POST /api/v1/rules). Fires to 'hindsight-replay-engine' webhook channel -> http://localhost:4123/hooks/signoz. Metric name frozen in packages/shared/src/telemetry.ts (METRIC.LOOP_SCORE). VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "alert": "Hindsight: loop tripwire (loop.score >= 3)",
+  "alertType": "METRIC_BASED_ALERT",
+  "ruleType": "threshold_rule",
+  "evalWindow": "1m0s",
+  "frequency": "30s",
+  "condition": {
+    "compositeQuery": {
+      "queryType": "builder",
+      "panelType": "graph",
+      "builderQueries": {
+        "A": {
+          "queryName": "A",
+          "dataSource": "metrics",
+          "aggregateOperator": "max",
+          "aggregateAttribute": { "key": "hindsight.loop.score", "dataType": "float64", "type": "Gauge", "isColumn": true },
+          "timeAggregation": "max",
+          "spaceAggregation": "max",
+          "filters": { "op": "AND", "items": [] },
+          "groupBy": [
+            { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false },
+            { "key": "hindsight.run.id", "dataType": "string", "type": "tag", "isColumn": false }
+          ],
+          "expression": "A",
+          "disabled": false,
+          "legend": "loop score {{hindsight.agent.id}} {{hindsight.run.id}}"
+        }
+      },
+      "queryFormulas": []
+    },
+    "op": ">=",
+    "target": 3,
+    "matchType": "2",
+    "targetUnit": "",
+    "selectedQueryName": "A"
+  },
+  "labels": { "severity": "critical", "team": "hindsight", "trigger": "loop" },
+  "annotations": {
+    "summary": "Loop tripwire: agent {{$labels.hindsight.agent.id}} run {{$labels.hindsight.run.id}} hit loop.score {{$value}}",
+    "description": "Agent is looping (repeated near-identical steps). The replay-engine opens an incident immediately and surfaces a fork point at the loop entry."
+  },
+  "preferredChannels": ["hindsight-replay-engine"]
+}

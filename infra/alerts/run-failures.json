@@ -1,0 +1,61 @@
+{
+  "//": "Hindsight alert :: run failures. Threshold rule, per-agent error rate > 20% over 5m. Built against SigNoz EE v0.133.0 rule schema (POST /api/v1/rules). Fires to the 'hindsight-replay-engine' notification channel (a webhook channel POSTing to http://localhost:4123/hooks/signoz — create it once via infra/alerts/README notes or the SigNoz UI). Metric names frozen in packages/shared/src/telemetry.ts. VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "alert": "Hindsight: run failures > 20% (per agent)",
+  "alertType": "METRIC_BASED_ALERT",
+  "ruleType": "threshold_rule",
+  "evalWindow": "5m0s",
+  "frequency": "1m0s",
+  "condition": {
+    "compositeQuery": {
+      "queryType": "builder",
+      "panelType": "graph",
+      "builderQueries": {
+        "A": {
+          "queryName": "A",
+          "dataSource": "metrics",
+          "aggregateOperator": "sum_rate",
+          "aggregateAttribute": { "key": "hindsight.runs.total", "dataType": "float64", "type": "Sum", "isColumn": true },
+          "timeAggregation": "rate",
+          "spaceAggregation": "sum",
+          "filters": {
+            "op": "AND",
+            "items": [
+              { "key": { "key": "hindsight.run.outcome", "dataType": "string", "type": "tag", "isColumn": false }, "op": "=", "value": "failure" }
+            ]
+          },
+          "groupBy": [ { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false } ],
+          "expression": "A",
+          "disabled": true,
+          "legend": "failures {{hindsight.agent.id}}"
+        },
+        "B": {
+          "queryName": "B",
+          "dataSource": "metrics",
+          "aggregateOperator": "sum_rate",
+          "aggregateAttribute": { "key": "hindsight.runs.total", "dataType": "float64", "type": "Sum", "isColumn": true },
+          "timeAggregation": "rate",
+          "spaceAggregation": "sum",
+          "filters": { "op": "AND", "items": [] },
+          "groupBy": [ { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false } ],
+          "expression": "B",
+          "disabled": true,
+          "legend": "total {{hindsight.agent.id}}"
+        }
+      },
+      "queryFormulas": [
+        { "queryName": "F1", "expression": "A/B", "legend": "error rate {{hindsight.agent.id}}", "disabled": false }
+      ]
+    },
+    "op": ">",
+    "target": 0.2,
+    "matchType": "1",
+    "targetUnit": "",
+    "selectedQueryName": "F1"
+  },
+  "labels": { "severity": "critical", "team": "hindsight" },
+  "annotations": {
+    "summary": "Agent {{$labels.hindsight.agent.id}} failure rate {{$value}} exceeds 20% over 5m",
+    "description": "Run failure rate crossed 20% for this agent. The replay-engine opens an incident and offers a fork from the last good step."
+  },
+  "preferredChannels": ["hindsight-replay-engine"]
+}

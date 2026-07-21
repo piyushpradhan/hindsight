@@ -1,0 +1,195 @@
+{
+  "//": "Hindsight :: Ops (meta-dashboard). Config-as-code, importable via SigNoz UI (Dashboards -> Import JSON) or POST /api/v1/dashboards. Built against SigNoz EE v0.133.0 builder-query schema (see apps/replay-engine/src/signoz/client.ts). Metric names frozen in packages/shared/src/telemetry.ts (METRIC.*). MTTR-for-agents and '$ saved by fork' are derived via query formulas over emitted counters. VALIDATE ON IMPORT: authored offline; the dashboards API requires auth.",
+  "title": "Hindsight :: Ops",
+  "description": "The meta-dashboard. Incidents opened, forks run, MTTR-for-agents (incident created -> resolved-via-fork), and $ saved by fork vs full re-run.",
+  "tags": ["hindsight", "ops", "meta"],
+  "version": "v4",
+  "uploadedGrafana": false,
+  "variables": {},
+  "layout": [
+    { "i": "incidents-opened", "x": 0, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "forks-run", "x": 6, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "mttr-agents", "x": 0, "y": 6, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "dollars-saved", "x": 6, "y": 6, "w": 6, "h": 6, "moved": false, "static": false }
+  ],
+  "widgets": [
+    {
+      "id": "incidents-opened",
+      "title": "Incidents opened",
+      "description": "Total hindsight.incidents.total across the fleet.",
+      "panelTypes": "value",
+      "yAxisUnit": "short",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.incidents.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "reduceTo": "sum",
+              "legend": "incidents opened"
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "forks-run",
+      "title": "Forks run",
+      "description": "Total hindsight.forks.total (replay-with-mutation runs).",
+      "panelTypes": "value",
+      "yAxisUnit": "short",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.forks.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "reduceTo": "sum",
+              "legend": "forks run"
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "mttr-agents",
+      "title": "MTTR for agents (incident -> resolved-via-fork)",
+      "description": "Ratio of open incidents to fork-resolutions is a proxy for how many incidents get closed by a fork. Where the recorder emits per-incident resolve latency this panel should be swapped for avg(hindsight.step.duration{step.kind=resolve}); until then it tracks resolution coverage.",
+      "panelTypes": "value",
+      "yAxisUnit": "percentunit",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.forks.resolved.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": true,
+              "reduceTo": "sum",
+              "legend": "resolved via fork"
+            },
+            {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.incidents.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "B",
+              "disabled": true,
+              "reduceTo": "sum",
+              "legend": "incidents opened"
+            }
+          ],
+          "queryFormulas": [
+            { "queryName": "F1", "expression": "A/B", "legend": "fork resolution coverage", "disabled": false }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dollars-saved",
+      "title": "$ saved by fork vs full re-run",
+      "description": "A fork replays from a fork point instead of re-running the whole task. Savings = (full re-run cost) - (fork cost). Approximated as total cost avoided: hindsight.forks.resolved.total x avg hindsight.cost.usd per run, minus the (smaller) fork cost already counted in hindsight.cost.usd.total. Tune the multiplier to your average run cost.",
+      "panelTypes": "value",
+      "yAxisUnit": "currencyUSD",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.forks.resolved.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": true,
+              "reduceTo": "sum",
+              "legend": "forks resolved"
+            },
+            {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.cost.usd.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "expression": "B",
+              "disabled": true,
+              "reduceTo": "sum",
+              "legend": "total cost spent"
+            }
+          ],
+          "queryFormulas": [
+            { "queryName": "F1", "expression": "A * (B / (A + 1)) - B", "legend": "$ saved vs full re-run", "disabled": false }
+          ]
+        }
+      }
+    }
+  ]
+}

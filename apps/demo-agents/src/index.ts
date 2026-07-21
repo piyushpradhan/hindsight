@@ -1,0 +1,56 @@
+/**
+ * Public surface of @hindsight/demo-agents. The fork executor imports the mock
+ * provider, tool registry, and the resumable agent loop from here rather than
+ * reimplementing them.
+ */
+
+// Core types.
+export type {
+  ChatMessage,
+  Completion,
+  LlmRequest,
+  Provider,
+  ToolCall,
+  ToolDef,
+  ToolEffect,
+  ToolRegistry,
+} from "./types.js";
+
+// Deterministic mock LLM provider (messages + seed + temperature → completion).
+export { createMockProvider } from "./mock-provider.js";
+export type { MockProviderOptions, MockLlmRequest, PlanStep } from "./mock-provider.js";
+
+// Tool registry / implementations, keyed by name, flagged safe vs side-effectful.
+export {
+  RESEARCH_TOOLS,
+  SUPPORT_TOOLS,
+  ALL_TOOLS,
+  index as indexTools,
+  isSafe,
+} from "./tools.js";
+
+// Resumable agent loop.
+export { runAgent } from "./agent-loop.js";
+export type { RunAgentOptions, AgentResult } from "./agent-loop.js";
+
+// Agents + convenience runner.
+export {
+  RESEARCH_AGENT,
+  SUPPORT_AGENT,
+  AGENTS,
+  runAgentSpec,
+} from "./agents.js";
+export type { AgentSpec, RunSpecOptions } from "./agents.js";
+
+// Chaos.
+export {
+  CHAOS_MODES,
+  parseChaos,
+  MalformedToolJsonError,
+  ToolTimeoutError,
+} from "./chaos.js";
+export type { ChaosMode } from "./chaos.js";
+
+// Optional real-provider seam.
+export { createAnthropicProvider, anthropicAvailable } from "./anthropic-provider.js";
+export type { AnthropicLike } from "./anthropic-provider.js";

@@ -1,0 +1,217 @@
+{
+  "//": "Hindsight :: Agent Reliability dashboard. Config-as-code, importable via SigNoz UI (Dashboards -> Import JSON) or POST /api/v1/dashboards. Built against SigNoz EE v0.133.0 builder-query schema (see apps/replay-engine/src/signoz/client.ts). Metric names are frozen in packages/shared/src/telemetry.ts (METRIC.*) and attribute names in ATTR.*. VALIDATE ON IMPORT: this JSON was authored offline (dashboards API requires auth); confirm panel ids do not collide on your instance.",
+  "title": "Hindsight :: Agent Reliability",
+  "description": "Per-agent success rate, incident count, p95 step latency and tool error rate. Grouped by hindsight.agent.id.",
+  "tags": ["hindsight", "agents", "reliability"],
+  "version": "v4",
+  "uploadedGrafana": false,
+  "variables": {
+    "agent": {
+      "id": "agent",
+      "name": "agent",
+      "description": "Filter by hindsight.agent.id",
+      "type": "DYNAMIC",
+      "dynamicVariablesAttribute": "hindsight.agent.id",
+      "multiSelect": true,
+      "showALLOption": true,
+      "sort": "ASC"
+    }
+  },
+  "layout": [
+    { "i": "success-rate", "x": 0, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "incident-count", "x": 6, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "p95-step-latency", "x": 0, "y": 6, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "tool-error-rate", "x": 6, "y": 6, "w": 6, "h": 6, "moved": false, "static": false }
+  ],
+  "widgets": [
+    {
+      "id": "success-rate",
+      "title": "Success rate (per agent)",
+      "description": "Share of runs whose outcome=success, from hindsight.runs.total split by hindsight.run.outcome.",
+      "panelTypes": "graph",
+      "yAxisUnit": "percentunit",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.runs.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "filters": {
+                "op": "AND",
+                "items": [
+                  { "key": { "key": "hindsight.run.outcome", "dataType": "string", "type": "tag", "isColumn": false }, "op": "=", "value": "success" }
+                ]
+              },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "A",
+              "disabled": true,
+              "legend": "success {{hindsight.agent.id}}"
+            },
+            {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.runs.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "B",
+              "disabled": true,
+              "legend": "total {{hindsight.agent.id}}"
+            }
+          ],
+          "queryFormulas": [
+            { "queryName": "F1", "expression": "A/B", "legend": "success rate {{hindsight.agent.id}}", "disabled": false }
+          ]
+        }
+      }
+    },
+    {
+      "id": "incident-count",
+      "title": "Incidents opened (per agent)",
+      "description": "Count of hindsight.incidents.total, grouped by hindsight.agent.id.",
+      "panelTypes": "graph",
+      "yAxisUnit": "short",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.incidents.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "A",
+              "disabled": false,
+              "legend": "incidents {{hindsight.agent.id}}"
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "p95-step-latency",
+      "title": "p95 step latency (per agent)",
+      "description": "95th percentile of hindsight.step.duration, grouped by hindsight.agent.id.",
+      "panelTypes": "graph",
+      "yAxisUnit": "ms",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "p95",
+              "aggregateAttribute": {
+                "key": "hindsight.step.duration",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true
+              },
+              "timeAggregation": "p95",
+              "spaceAggregation": "p95",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "A",
+              "disabled": false,
+              "legend": "p95 {{hindsight.agent.id}}"
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "tool-error-rate",
+      "title": "Tool error rate (per agent)",
+      "description": "hindsight.tool.errors.total over hindsight.runs.total, grouped by hindsight.agent.id.",
+      "panelTypes": "graph",
+      "yAxisUnit": "percentunit",
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.tool.errors.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "A",
+              "disabled": true,
+              "legend": "tool errors {{hindsight.agent.id}}"
+            },
+            {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "sum_rate",
+              "aggregateAttribute": {
+                "key": "hindsight.runs.total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false }
+              ],
+              "expression": "B",
+              "disabled": true,
+              "legend": "runs {{hindsight.agent.id}}"
+            }
+          ],
+          "queryFormulas": [
+            { "queryName": "F1", "expression": "A/B", "legend": "tool error rate {{hindsight.agent.id}}", "disabled": false }
+          ]
+        }
+      }
+    }
+  ]
+}

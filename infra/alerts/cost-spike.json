@@ -1,0 +1,59 @@
+{
+  "//": "Hindsight alert :: cost spike. Anomaly rule on cost-per-run, per agent (hindsight.cost.usd.total / hindsight.runs.total). SigNoz EE v0.133.0 supports anomaly detection (ruleType 'anomaly_rule'); if unavailable, switch to 'threshold_rule' with a fixed $/run ceiling. Fires to 'hindsight-replay-engine' webhook channel -> http://localhost:4123/hooks/signoz. Metric names frozen in packages/shared/src/telemetry.ts. VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "alert": "Hindsight: cost-per-run spike (per agent)",
+  "alertType": "METRIC_BASED_ALERT",
+  "ruleType": "anomaly_rule",
+  "evalWindow": "10m0s",
+  "frequency": "1m0s",
+  "condition": {
+    "compositeQuery": {
+      "queryType": "builder",
+      "panelType": "graph",
+      "builderQueries": {
+        "A": {
+          "queryName": "A",
+          "dataSource": "metrics",
+          "aggregateOperator": "sum_rate",
+          "aggregateAttribute": { "key": "hindsight.cost.usd.total", "dataType": "float64", "type": "Sum", "isColumn": true },
+          "timeAggregation": "increase",
+          "spaceAggregation": "sum",
+          "filters": { "op": "AND", "items": [] },
+          "groupBy": [ { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false } ],
+          "expression": "A",
+          "disabled": true,
+          "legend": "cost {{hindsight.agent.id}}"
+        },
+        "B": {
+          "queryName": "B",
+          "dataSource": "metrics",
+          "aggregateOperator": "sum_rate",
+          "aggregateAttribute": { "key": "hindsight.runs.total", "dataType": "float64", "type": "Sum", "isColumn": true },
+          "timeAggregation": "increase",
+          "spaceAggregation": "sum",
+          "filters": { "op": "AND", "items": [] },
+          "groupBy": [ { "key": "hindsight.agent.id", "dataType": "string", "type": "tag", "isColumn": false } ],
+          "expression": "B",
+          "disabled": true,
+          "legend": "runs {{hindsight.agent.id}}"
+        }
+      },
+      "queryFormulas": [
+        { "queryName": "F1", "expression": "A/B", "legend": "cost per run {{hindsight.agent.id}}", "disabled": false }
+      ]
+    },
+    "op": ">",
+    "target": 3,
+    "matchType": "1",
+    "targetUnit": "",
+    "selectedQueryName": "F1",
+    "algorithm": "standard",
+    "seasonality": "daily",
+    "z_score_threshold": 3
+  },
+  "labels": { "severity": "warning", "team": "hindsight", "trigger": "cost" },
+  "annotations": {
+    "summary": "Cost spike: agent {{$labels.hindsight.agent.id}} cost-per-run anomalous ({{$value}})",
+    "description": "Cost per run deviated from its baseline for this agent (e.g. runaway tool calls or token blowups). The replay-engine correlates it with the run graph for postmortem."
+  },
+  "preferredChannels": ["hindsight-replay-engine"]
+}
