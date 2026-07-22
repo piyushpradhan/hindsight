@@ -257,6 +257,14 @@ textarea.input { min-height: 110px; resize: vertical; line-height: 1.5; }
   border-color: var(--ember);
   color: var(--ember);
   box-shadow: 0 0 0 4px var(--ember-wash);
+  animation: emberPulse 2s ease-in-out infinite;
+}
+@keyframes emberPulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--ember-wash); }
+  50% { box-shadow: 0 0 0 8px rgba(193, 68, 14, 0.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-dot.failed { animation: none; }
 }
 .step-dot.selected {
   background: var(--ember);
@@ -266,6 +274,35 @@ textarea.input { min-height: 110px; resize: vertical; line-height: 1.5; }
   box-shadow: 0 0 0 5px var(--ember-wash);
 }
 .summary-strip { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 30px; }
+
+/* Scrubber + summary pinned under the header, so you can scrub from anywhere
+   in a long transcript. Bleeds to the wrap edges for a full-width divider. */
+.run-sticky {
+  position: sticky;
+  top: 54px;
+  z-index: 20;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -28px 24px;
+  padding: 8px 28px 0;
+}
+.run-sticky .scrubber { margin-bottom: 6px; }
+.run-sticky .summary-strip { margin: 0 0 10px; }
+.kbd-hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
+.kbd-hint kbd {
+  font-family: var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--paper-raise);
+  color: var(--muted);
+}
 
 /* ---- transcript ---- */
 .transcript { display: flex; flex-direction: column; gap: 16px; }
@@ -489,6 +526,8 @@ textarea.input { min-height: 110px; resize: vertical; line-height: 1.5; }
 .lookup-block { margin-bottom: 28px; }
 .lookup-block .trace-lookup { margin-bottom: 0; }
 .lookup-block .error-note { margin-top: 10px; }
+.empty-onboard { max-width: 640px; margin-top: 8px; }
+.empty-onboard .json { margin: 14px 0; }
 select.input { appearance: auto; }
 
 @media (max-width: 860px) {

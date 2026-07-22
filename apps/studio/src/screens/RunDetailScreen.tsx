@@ -49,6 +49,30 @@ export function RunDetailScreen() {
     cardRefs.current.get(index)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  // Keyboard scrubbing: ←/→ move between steps, `f` forks the selected step.
+  // Ignored while typing in a form control (e.g. the fork prompt editor).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (!graph) return;
+      const ordered = [...graph.steps].sort((a, b) => a.index - b.index);
+      if (ordered.length === 0) return;
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const pos = ordered.findIndex((s) => s.index === selected);
+        const cur = pos < 0 ? 0 : pos;
+        const next = e.key === "ArrowRight" ? Math.min(cur + 1, ordered.length - 1) : Math.max(cur - 1, 0);
+        handleSelect(ordered[next].index);
+      } else if ((e.key === "f" || e.key === "F") && selected !== null) {
+        e.preventDefault();
+        setForkAt((cur) => (cur === selected ? null : selected));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [graph, selected, handleSelect]);
+
   if (error) {
     return (
       <div className="page">
@@ -89,20 +113,24 @@ export function RunDetailScreen() {
         {run.error && <div className="error-note">{run.error}</div>}
       </div>
 
-      <StepScrubber steps={steps} selected={selected} onSelect={handleSelect} />
-
-      <div className="summary-strip">
-        <OutcomeBadge outcome={run.outcome} />
-        <Badge>{steps.length} steps</Badge>
-        <Badge>{fmtTokens(run.totalTokens)} tokens</Badge>
-        <Badge>{fmtUsd(run.costUsd)}</Badge>
-        {duration !== null && <Badge>{fmtMs(duration)}</Badge>}
-        {run.taskId && <Badge>task {run.taskId}</Badge>}
-        {run.forkOf && (
-          <Badge tone="ember">
-            <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>
-          </Badge>
-        )}
+      <div className="run-sticky">
+        <StepScrubber steps={steps} selected={selected} onSelect={handleSelect} />
+        <div className="kbd-hint">
+          <kbd>←</kbd> <kbd>→</kbd> step · <kbd>f</kbd> fork this step · replay is free — no model calls, $0.00
+        </div>
+        <div className="summary-strip">
+          <OutcomeBadge outcome={run.outcome} />
+          <Badge>{steps.length} steps</Badge>
+          <Badge>{fmtTokens(run.totalTokens)} tokens</Badge>
+          <Badge>{fmtUsd(run.costUsd)}</Badge>
+          {duration !== null && <Badge>{fmtMs(duration)}</Badge>}
+          {run.taskId && <Badge>task {run.taskId}</Badge>}
+          {run.forkOf && (
+            <Badge tone="ember">
+              <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>
+            </Badge>
+          )}
+        </div>
       </div>
 
       {steps.length === 0 && (

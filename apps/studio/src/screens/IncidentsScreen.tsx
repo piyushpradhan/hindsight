@@ -149,7 +149,17 @@ export function IncidentsScreen() {
       {!incidents && !error && <div className="loading">loading incidents…</div>}
 
       {incidents && incidents.length === 0 && (
-        <div className="loading">no incidents — the fleet is quiet</div>
+        <div className="empty-onboard">
+          <p className="page-sub">
+            No incidents — the fleet is quiet. Wire an agent with the recorder SDK and every run
+            becomes a replayable trace:
+          </p>
+          <pre className="json">{`const run = hindsight.startRun({ agentId: "researcher", taskId });
+const resp = await run.llm(() => anthropic.messages.create(params), params);
+const out  = await run.tool("web_search", args, () => webSearch(args));
+run.end({ outcome: "success" });`}</pre>
+          <p className="page-sub">…or paste a trace_id above to replay any past run for $0.00.</p>
+        </div>
       )}
 
       {incidents && incidents.length > 0 && (

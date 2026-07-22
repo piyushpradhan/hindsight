@@ -1,9 +1,16 @@
 import type { RunStep } from "@hindsight/shared";
+import { fmtMs, fmtUsd } from "../format";
 
 interface Props {
   steps: RunStep[];
   selected: number | null;
   onSelect: (index: number) => void;
+}
+
+function tooltip(s: RunStep): string {
+  const parts = [`#${s.index}`, s.kind, s.name, fmtMs(s.latencyMs), fmtUsd(s.costUsd)];
+  if (s.error) parts.push("FAILED");
+  return parts.join(" · ");
 }
 
 export function StepScrubber({ steps, selected, onSelect }: Props) {
@@ -23,7 +30,9 @@ export function StepScrubber({ steps, selected, onSelect }: Props) {
             key={s.spanId}
             type="button"
             className={cls}
-            title={`#${s.index} ${s.kind} · ${s.name}${s.error ? " · failed" : ""}`}
+            role="tab"
+            aria-selected={selected === s.index}
+            title={tooltip(s)}
             onClick={() => onSelect(s.index)}
           >
             {s.index}
