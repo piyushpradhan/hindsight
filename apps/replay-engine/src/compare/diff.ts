@@ -62,8 +62,14 @@ export function compareRuns(original: RunGraph, fork: RunGraph): CompareResult {
   return {
     original: original.run,
     fork: fork.run,
-    deltaTokens: fork.run.totalTokens - original.run.totalTokens,
-    deltaCostUsd: fork.run.costUsd - original.run.costUsd,
+    deltaTokens:
+      fork.run.totalTokens === null || original.run.totalTokens === null
+        ? null
+        : fork.run.totalTokens - original.run.totalTokens,
+    deltaCostUsd:
+      fork.run.costUsd === null || original.run.costUsd === null
+        ? null
+        : fork.run.costUsd - original.run.costUsd,
     deltaLatencyMs: latencyMs(fork.run) - latencyMs(original.run),
     deltaSteps: fork.run.stepCount - original.run.stepCount,
     outcomeChanged: fork.run.outcome !== original.run.outcome,

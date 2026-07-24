@@ -9,9 +9,13 @@ export type {
   ForkInfo,
 } from "./recorder.js";
 export {
+  DEFAULT_MAX_PAYLOAD_BYTES,
+  protectPayload,
   shouldRecordPayload,
   runIsSampled,
   SAMPLE_EVERY,
+  type PayloadMode,
+  type ProtectedPayload,
   type RecordPayloadsPolicy,
 } from "./payload-policy.js";
 export { hashToolArgs, canonicalJson } from "./hash.js";

@@ -45,11 +45,15 @@ function EngineStatus() {
 export function AppHeader() {
   return (
     <header className="app-header">
-      <div className="wrap">
+      <div className="sidebar-inner">
         <Link to="/" className="wordmark">
-          HINDSIGHT
+          <span className="wordmark-mark">H</span>
+          <span>
+            Hindsight
+            <small>Flight recorder</small>
+          </span>
         </Link>
-        <nav className="nav-links">
+        <nav className="nav-links" aria-label="Primary navigation">
           <NavLink to="/incidents" className={({ isActive }) => (isActive ? "active" : "")}>
             Incidents
           </NavLink>
@@ -57,21 +61,28 @@ export function AppHeader() {
             Runs
           </NavLink>
         </nav>
-        {MOCK_MODE ? (
-          <a
-            className="mock-pill"
-            href="?mock=0"
-            title="Studio is serving fixture data (?mock=1). Click to switch back to the live API."
-          >
-            mock data
+        <div className="sidebar-section">
+          <div className="sidebar-label">Fleet health</div>
+          <FleetStrip />
+        </div>
+        <div className="sidebar-footer">
+          <div className="sidebar-label">System</div>
+          {MOCK_MODE ? (
+            <a
+              className="mock-pill"
+              href="?mock=0"
+              title="Studio is serving fixture data (?mock=1). Click to switch back to the live API."
+            >
+              <span className="dot" />
+              fixture data
+            </a>
+          ) : (
+            <EngineStatus />
+          )}
+          <a className="signoz-link" href={SIGNOZ_DASHBOARDS_URL} target="_blank" rel="noreferrer">
+            Open SigNoz <span aria-hidden="true">↗</span>
           </a>
-        ) : (
-          <EngineStatus />
-        )}
-        <FleetStrip />
-        <a className="signoz-link" href={SIGNOZ_DASHBOARDS_URL} target="_blank" rel="noreferrer">
-          Open SigNoz ↗
-        </a>
+        </div>
       </div>
     </header>
   );

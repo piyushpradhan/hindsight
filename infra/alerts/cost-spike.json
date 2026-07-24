@@ -1,5 +1,6 @@
 {
-  "//": "Hindsight alert :: cost spike. Anomaly rule on cost-per-run, per agent (hindsight.cost.usd.total / hindsight.runs.total). SigNoz EE v0.133.0 supports anomaly detection (ruleType 'anomaly_rule'); if unavailable, switch to 'threshold_rule' with a fixed $/run ceiling. Fires to 'hindsight-replay-engine' webhook channel -> http://localhost:4123/hooks/signoz. Metric names frozen in packages/shared/src/telemetry.ts. VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "//": "UNINSTALLED TEMPLATE. Fleet-only notification; no incident webhook because aggregate metrics have no authoritative trace_id.",
+  "hindsightInstallStatus": "template_uninstalled",
   "alert": "Hindsight: cost-per-run spike (per agent)",
   "alertType": "METRIC_BASED_ALERT",
   "ruleType": "anomaly_rule",
@@ -55,5 +56,5 @@
     "summary": "Cost spike: agent {{$labels.hindsight.agent.id}} cost-per-run anomalous ({{$value}})",
     "description": "Cost per run deviated from its baseline for this agent (e.g. runaway tool calls or token blowups). The replay-engine correlates it with the run graph for postmortem."
   },
-  "preferredChannels": ["hindsight-replay-engine"]
+  "preferredChannels": []
 }

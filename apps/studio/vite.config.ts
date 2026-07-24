@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 const REPLAY_ENGINE = "http://localhost:4123";
 
 // When replay-engine is down, answer with a distinct 502 so the client's
-// DEV ONLY mock fallback can tell "backend down" apart from real API errors.
+// client can tell "backend down" apart from real API errors.
 const engineProxy: ProxyOptions = {
   target: REPLAY_ENGINE,
   configure: (proxy) => {

@@ -32,7 +32,9 @@ export function computeFleetStats(
         agentId,
         runsToday: today.length,
         successRate: today.length > 0 ? successes / today.length : 0,
-        costTodayUsd: today.reduce((n, r) => n + r.costUsd, 0),
+        costTodayUsd: today.some((r) => r.costUsd === null)
+          ? null
+          : today.reduce((n, r) => n + (r.costUsd ?? 0), 0),
         openIncidents: openIncidentsByAgent.get(agentId) ?? 0,
       };
     })

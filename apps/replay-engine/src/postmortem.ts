@@ -7,7 +7,7 @@ export interface PostmortemInput {
   signozUrl: string;
 }
 
-const money = (usd: number) => `$${usd.toFixed(6)}`;
+const money = (usd: number | null) => (usd === null ? "unknown" : `$${usd.toFixed(6)}`);
 
 export function generatePostmortem({ incident, runGraph, compare, signozUrl }: PostmortemInput): string {
   const lines: string[] = [];
@@ -27,7 +27,7 @@ export function generatePostmortem({ incident, runGraph, compare, signozUrl }: P
     lines.push(
       `Run \`${run.runId}\` finished with outcome **${run.outcome}**` +
         `${run.error ? ` (${run.error})` : ""} after ${run.stepCount} steps, ` +
-        `${run.totalTokens} tokens, ${money(run.costUsd)}.`,
+        `${run.totalTokens ?? "unknown"} tokens, ${money(run.costUsd)}.`,
     );
     const failed = runGraph.steps.filter((s) => s.error);
     for (const s of failed) {
@@ -44,11 +44,36 @@ export function generatePostmortem({ incident, runGraph, compare, signozUrl }: P
     lines.push("| # | kind | name | latency | tokens | cost | error |");
     lines.push("|---|------|------|---------|--------|------|-------|");
     for (const s of runGraph.steps) {
-      const tokens = (s.inputTokens ?? 0) + (s.outputTokens ?? 0);
+      const tokens =
+        s.kind === "llm" &&
+        (s.inputTokens === undefined || s.outputTokens === undefined)
+          ? "unknown"
+          : String((s.inputTokens ?? 0) + (s.outputTokens ?? 0));
       lines.push(
         `| ${s.index} | ${s.kind} | \`${s.name}\` | ${s.latencyMs.toFixed(0)}ms | ${tokens} | ${money(s.costUsd)} | ${s.error ?? ""} |`,
       );
     }
+    lines.push("");
+  }
+
+  lines.push("## Root cause");
+  lines.push("");
+  lines.push(
+    "Unknown. The verified fork proves the recorded mutation removed the failure condition; it does not by itself prove a broader causal explanation.",
+  );
+  lines.push("");
+
+  if (incident.verification?.verified) {
+    lines.push("## Resolution evidence");
+    lines.push("");
+    lines.push(`- Verified: ${incident.verification.checkedAt}`);
+    if (incident.resolutionMs !== undefined) {
+      lines.push(`- Resolution duration: ${incident.resolutionMs}ms`);
+    }
+    if (incident.mutation) {
+      lines.push(`- Winning mutation: \`${JSON.stringify(incident.mutation)}\``);
+    }
+    lines.push(`- Verification: ${incident.verification.reason}`);
     lines.push("");
   }
 
@@ -64,7 +89,7 @@ export function generatePostmortem({ incident, runGraph, compare, signozUrl }: P
     lines.push("|--------|--------|-------|-------|");
     lines.push(`| outcome | ${compare.original.outcome} | ${compare.fork.outcome} | ${compare.outcomeChanged ? "**changed**" : "same"} |`);
     lines.push(`| steps | ${compare.original.stepCount} | ${compare.fork.stepCount} | ${signed(compare.deltaSteps)} |`);
-    lines.push(`| tokens | ${compare.original.totalTokens} | ${compare.fork.totalTokens} | ${signed(compare.deltaTokens)} |`);
+    lines.push(`| tokens | ${compare.original.totalTokens ?? "unknown"} | ${compare.fork.totalTokens ?? "unknown"} | ${signed(compare.deltaTokens)} |`);
     lines.push(`| cost | ${money(compare.original.costUsd)} | ${money(compare.fork.costUsd)} | ${signed(compare.deltaCostUsd, 6)} |`);
     lines.push(`| latency | ${compare.original.endTime ? latency(compare.original) + "ms" : "?"} | ${compare.fork.endTime ? latency(compare.fork) + "ms" : "?"} | ${signed(compare.deltaLatencyMs)}ms |`);
     lines.push("");
@@ -95,7 +120,8 @@ export function generatePostmortem({ incident, runGraph, compare, signozUrl }: P
   return lines.join("\n");
 }
 
-const signed = (n: number, digits = 0) => `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
+const signed = (n: number | null, digits = 0) =>
+  n === null ? "unknown" : `${n > 0 ? "+" : ""}${n.toFixed(digits)}`;
 const latency = (run: { startTime: string; endTime?: string }) =>
   Date.parse(run.endTime as string) - Date.parse(run.startTime);
 

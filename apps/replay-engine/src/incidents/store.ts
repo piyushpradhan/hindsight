@@ -1,12 +1,17 @@
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { Incident, IncidentStatus } from "@hindsight/shared";
+import type {
+  Incident,
+  IncidentForkAttempt,
+  IncidentStatus,
+  IncidentVerification,
+  Mutation,
+} from "@hindsight/shared";
 
-/** Allowed status transitions; anything else is rejected with 400 upstream. */
 const TRANSITIONS: Record<IncidentStatus, IncidentStatus[]> = {
-  open: ["diagnosed", "resolved_via_fork", "dismissed"],
-  diagnosed: ["resolved_via_fork", "dismissed", "open"],
-  resolved_via_fork: [],
+  open: ["verifying", "dismissed"],
+  verifying: ["open", "resolved", "dismissed"],
+  resolved: [],
   dismissed: ["open"],
 };
 
@@ -25,27 +30,39 @@ interface Row {
   created_at: string;
   agent_id: string;
   trace_id: string;
+  run_id: string | null;
+  source: string | null;
   alert_name: string;
   severity: string | null;
   status: string;
+  alert_fingerprint: string | null;
+  failure_condition: string | null;
   fork_trace_id: string | null;
+  mutation_json: string | null;
+  mutation_hash: string | null;
+  verification_json: string | null;
+  resolved_at: string | null;
+  resolution_ms: number | null;
+  fork_attempts_json: string | null;
   notes: string | null;
 }
 
 export interface CreateIncidentInput {
   traceId: string;
+  runId?: string;
+  source?: string;
   agentId?: string;
   alertName?: string;
   severity?: string;
+  alertFingerprint?: string;
+  failureCondition?: string;
 }
 
-/** Updatable via PATCH; id/createdAt/traceId stay immutable. */
 const PATCHABLE: Record<string, keyof Row> = {
   agentId: "agent_id",
   alertName: "alert_name",
   severity: "severity",
   status: "status",
-  forkTraceId: "fork_trace_id",
   notes: "notes",
 };
 
@@ -68,36 +85,76 @@ export class IncidentStore {
         notes TEXT
       )
     `);
+    this.addColumn("alert_fingerprint", "TEXT");
+    this.addColumn("run_id", "TEXT");
+    this.addColumn("source", "TEXT");
+    this.addColumn("failure_condition", "TEXT");
+    this.addColumn("mutation_json", "TEXT");
+    this.addColumn("mutation_hash", "TEXT");
+    this.addColumn("verification_json", "TEXT");
+    this.addColumn("resolved_at", "TEXT");
+    this.addColumn("resolution_ms", "INTEGER");
+    this.addColumn("fork_attempts_json", "TEXT");
+    this.db.exec(`
+      UPDATE incidents SET status = 'open'
+      WHERE status IN ('diagnosed', 'resolved_via_fork');
+      CREATE UNIQUE INDEX IF NOT EXISTS incidents_alert_trace_unique
+      ON incidents(alert_fingerprint, trace_id)
+      WHERE alert_fingerprint IS NOT NULL;
+    `);
   }
 
   create(input: CreateIncidentInput): Incident {
-    const incident: Incident = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      agentId: input.agentId ?? "unknown",
-      traceId: input.traceId,
-      alertName: input.alertName ?? "manual",
-      severity: input.severity,
-      status: "open",
-    };
-    this.db
-      .prepare(
-        `INSERT INTO incidents (id, created_at, agent_id, trace_id, alert_name, severity, status)
-         VALUES (@id, @createdAt, @agentId, @traceId, @alertName, @severity, @status)`,
-      )
-      .run({ ...incident, severity: incident.severity ?? null });
+    const incident = newIncident(input);
+    this.insert(incident);
     return incident;
   }
 
+  createOrGet(input: CreateIncidentInput): Incident {
+    if (!input.alertFingerprint) return this.create(input);
+    const existing = this.db
+      .prepare(
+        "SELECT * FROM incidents WHERE alert_fingerprint = ? AND trace_id = ?",
+      )
+      .get(input.alertFingerprint, input.traceId) as Row | undefined;
+    if (existing) return rowToIncident(existing);
+    const incident = newIncident(input);
+    try {
+      this.insert(incident);
+      return incident;
+    } catch (error) {
+      if (!(error instanceof Error) || !/UNIQUE constraint failed/.test(error.message)) {
+        throw error;
+      }
+      return rowToIncident(
+        this.db
+          .prepare(
+            "SELECT * FROM incidents WHERE alert_fingerprint = ? AND trace_id = ?",
+          )
+          .get(input.alertFingerprint, input.traceId) as Row,
+      );
+    }
+  }
+
   list(): Incident[] {
-    const rows = this.db
-      .prepare("SELECT * FROM incidents ORDER BY created_at DESC")
-      .all() as Row[];
-    return rows.map(rowToIncident);
+    return (
+      this.db.prepare("SELECT * FROM incidents ORDER BY created_at DESC").all() as Row[]
+    ).map(rowToIncident);
   }
 
   get(id: string): Incident | undefined {
-    const row = this.db.prepare("SELECT * FROM incidents WHERE id = ?").get(id) as Row | undefined;
+    const row = this.db.prepare("SELECT * FROM incidents WHERE id = ?").get(id) as
+      | Row
+      | undefined;
+    return row ? rowToIncident(row) : undefined;
+  }
+
+  getByAlert(alertFingerprint: string, traceId: string): Incident | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM incidents WHERE alert_fingerprint = ? AND trace_id = ?",
+      )
+      .get(alertFingerprint, traceId) as Row | undefined;
     return row ? rowToIncident(row) : undefined;
   }
 
@@ -105,10 +162,7 @@ export class IncidentStore {
     const current = this.get(id);
     if (!current) return undefined;
     if (patch.status !== undefined && patch.status !== current.status) {
-      const allowed = TRANSITIONS[current.status] ?? [];
-      if (!allowed.includes(patch.status)) {
-        throw new InvalidTransitionError(current.status, patch.status);
-      }
+      this.assertTransition(current.status, patch.status);
     }
     const sets: string[] = [];
     const values: Record<string, unknown> = { id };
@@ -124,20 +178,150 @@ export class IncidentStore {
     return this.get(id);
   }
 
-  /** "Open" for fleet purposes = not resolved and not dismissed. */
+  startVerification(
+    id: string,
+    input: { forkTraceId: string; mutation: Mutation; mutationHash: string },
+    attempt?: Omit<IncidentForkAttempt, "forkTraceId" | "mutation" | "mutationHash">,
+  ): Incident | undefined {
+    const current = this.get(id);
+    if (!current) return undefined;
+    if (current.traceId === input.forkTraceId) {
+      throw new Error("fork trace must differ from the original trace");
+    }
+    if (current.status !== "verifying") this.assertTransition(current.status, "verifying");
+    const forkAttempt: IncidentForkAttempt | undefined = attempt
+      ? {
+          ...attempt,
+          forkTraceId: input.forkTraceId,
+          mutation: input.mutation,
+          mutationHash: input.mutationHash,
+        }
+      : undefined;
+    const attempts = [...(current.forkAttempts ?? [])];
+    if (forkAttempt) attempts.push(forkAttempt);
+    this.db
+      .prepare(
+        `UPDATE incidents
+         SET status = 'verifying',
+             fork_trace_id = @forkTraceId,
+             mutation_json = @mutation,
+             mutation_hash = @mutationHash,
+             verification_json = NULL,
+             resolved_at = NULL,
+             resolution_ms = NULL,
+             fork_attempts_json = @forkAttempts
+         WHERE id = @id`,
+      )
+      .run({
+        id,
+        forkTraceId: input.forkTraceId,
+        mutation: JSON.stringify(input.mutation),
+        mutationHash: input.mutationHash,
+        forkAttempts: JSON.stringify(attempts),
+      });
+    return this.get(id);
+  }
+
+  finishVerification(id: string, verification: IncidentVerification): Incident | undefined {
+    const current = this.get(id);
+    if (!current) return undefined;
+    if (current.status !== "verifying") {
+      throw new InvalidTransitionError(current.status, verification.verified ? "resolved" : "open");
+    }
+    const resolvedAt = verification.verified ? verification.checkedAt : null;
+    const resolutionMs = verification.verified
+      ? Math.max(0, Date.parse(verification.checkedAt) - Date.parse(current.createdAt))
+      : null;
+    const attempts = (current.forkAttempts ?? []).map((attempt) =>
+      attempt.forkTraceId === current.forkTraceId
+        ? { ...attempt, verification }
+        : attempt,
+    );
+    this.db
+      .prepare(
+        `UPDATE incidents
+         SET status = @status,
+             verification_json = @verification,
+             resolved_at = @resolvedAt,
+             resolution_ms = @resolutionMs,
+             fork_attempts_json = @forkAttempts
+         WHERE id = @id`,
+      )
+      .run({
+        id,
+        status: verification.verified ? "resolved" : "open",
+        verification: JSON.stringify(verification),
+        resolvedAt,
+        resolutionMs,
+        forkAttempts: JSON.stringify(attempts),
+      });
+    return this.get(id);
+  }
+
   openCountsByAgent(): Map<string, number> {
     const rows = this.db
       .prepare(
         `SELECT agent_id, COUNT(*) AS c FROM incidents
-         WHERE status IN ('open', 'diagnosed') GROUP BY agent_id`,
+         WHERE status IN ('open', 'verifying') GROUP BY agent_id`,
       )
       .all() as Array<{ agent_id: string; c: number }>;
-    return new Map(rows.map((r) => [r.agent_id, r.c]));
+    return new Map(rows.map((row) => [row.agent_id, row.c]));
   }
 
   close(): void {
     this.db.close();
   }
+
+  private insert(incident: Incident): void {
+    this.db
+      .prepare(
+        `INSERT INTO incidents (
+           id, created_at, agent_id, trace_id, alert_name, severity, status,
+           alert_fingerprint, failure_condition, run_id, source, fork_attempts_json
+         ) VALUES (
+           @id, @createdAt, @agentId, @traceId, @alertName, @severity, @status,
+           @alertFingerprint, @failureCondition, @runId, @source, @forkAttempts
+         )`,
+      )
+      .run({
+        ...incident,
+        severity: incident.severity ?? null,
+        alertFingerprint: incident.alertFingerprint ?? null,
+        failureCondition: incident.failureCondition ?? null,
+        runId: incident.runId ?? null,
+        source: incident.source ?? null,
+        forkAttempts: JSON.stringify(incident.forkAttempts ?? []),
+      });
+  }
+
+  private assertTransition(from: IncidentStatus, to: IncidentStatus): void {
+    if (!TRANSITIONS[from].includes(to)) throw new InvalidTransitionError(from, to);
+  }
+
+  private addColumn(name: string, type: string): void {
+    const columns = this.db.prepare("PRAGMA table_info(incidents)").all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((column) => column.name === name)) {
+      this.db.exec(`ALTER TABLE incidents ADD COLUMN ${name} ${type}`);
+    }
+  }
+}
+
+function newIncident(input: CreateIncidentInput): Incident {
+  return {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    agentId: input.agentId ?? "unknown",
+    traceId: input.traceId,
+    runId: input.runId,
+    source: input.source ?? "manual",
+    alertName: input.alertName ?? "manual",
+    severity: input.severity,
+    status: "open",
+    alertFingerprint: input.alertFingerprint,
+    failureCondition: input.failureCondition,
+  };
 }
 
 function rowToIncident(row: Row): Incident {
@@ -146,10 +330,29 @@ function rowToIncident(row: Row): Incident {
     createdAt: row.created_at,
     agentId: row.agent_id,
     traceId: row.trace_id,
+    runId: row.run_id ?? undefined,
+    source: row.source ?? undefined,
     alertName: row.alert_name,
     severity: row.severity ?? undefined,
     status: row.status as IncidentStatus,
+    alertFingerprint: row.alert_fingerprint ?? undefined,
+    failureCondition: row.failure_condition ?? undefined,
     forkTraceId: row.fork_trace_id ?? undefined,
+    mutation: parseJson<Mutation>(row.mutation_json),
+    mutationHash: row.mutation_hash ?? undefined,
+    verification: parseJson<IncidentVerification>(row.verification_json),
+    resolvedAt: row.resolved_at ?? undefined,
+    resolutionMs: row.resolution_ms ?? undefined,
+    forkAttempts: parseJson<IncidentForkAttempt[]>(row.fork_attempts_json) ?? [],
     notes: row.notes ?? undefined,
   };
+}
+
+function parseJson<T>(value: string | null): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
 }

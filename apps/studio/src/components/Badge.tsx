@@ -15,7 +15,7 @@ export function OutcomeBadge({ outcome }: { outcome: RunOutcome }) {
 
 export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
   const tone: BadgeTone =
-    status === "resolved_via_fork" ? "ok" : status === "open" ? "ember" : "muted";
+    status === "resolved" ? "ok" : status === "open" ? "ember" : "muted";
   return <Badge tone={tone}>{status.replace(/_/g, " ")}</Badge>;
 }
 

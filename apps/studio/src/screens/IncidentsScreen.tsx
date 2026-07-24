@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Incident, IncidentStatus } from "@hindsight/shared";
 import { api } from "../api";
@@ -13,87 +12,13 @@ import { PostmortemModal } from "../components/PostmortemModal";
 function transitionsFor(status: IncidentStatus): Array<{ label: string; to: IncidentStatus }> {
   switch (status) {
     case "open":
-      return [
-        { label: "Mark diagnosed", to: "diagnosed" },
-        { label: "Dismiss", to: "dismissed" },
-      ];
-    case "diagnosed":
-      return [
-        { label: "Reopen", to: "open" },
-        { label: "Dismiss", to: "dismissed" },
-      ];
+      return [{ label: "Dismiss", to: "dismissed" }];
     case "dismissed":
       return [{ label: "Reopen", to: "open" }];
-    case "resolved_via_fork":
+    case "verifying":
+    case "resolved":
       return [];
   }
-}
-
-function ResolveViaForkModal({
-  incident,
-  onClose,
-  onDone,
-}: {
-  incident: Incident;
-  onClose: () => void;
-  onDone: () => Promise<void>;
-}) {
-  const [forkTraceId, setForkTraceId] = useState(incident.forkTraceId ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-
-  const confirm = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.patchIncident(incident.id, {
-        status: "resolved_via_fork",
-        ...(forkTraceId.trim() ? { forkTraceId: forkTraceId.trim() } : {}),
-      });
-      await onDone();
-      onClose();
-    } catch (err) {
-      setError(err);
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <form className="modal-card" onSubmit={confirm} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="eyebrow modal-eyebrow">resolve via fork</span>
-          <span className="spacer" />
-          <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <p className="modal-text">
-          Mark incident <b>{shortId(incident.id)}</b> as resolved-via-fork. Link the counterfactual
-          trace that proves the fix — run a fork from the run timeline first, then paste its trace
-          id here.
-        </p>
-        <label className="field-label" htmlFor="resolve-fork-trace">
-          fork trace id
-        </label>
-        <input
-          id="resolve-fork-trace"
-          className="input"
-          value={forkTraceId}
-          onChange={(e) => setForkTraceId(e.target.value)}
-          placeholder="2b7d4e9f1a3c4856…"
-          spellCheck={false}
-        />
-        {error ? <ErrorNote error={error} /> : null}
-        <div className="row modal-actions">
-          <button className="btn btn-ember" type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Mark resolved via fork"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
 }
 
 export function IncidentsScreen() {
@@ -101,7 +26,8 @@ export function IncidentsScreen() {
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [postmortemId, setPostmortemId] = useState<string | null>(null);
-  const [resolving, setResolving] = useState<Incident | null>(null);
+  const [undo, setUndo] = useState<{ id: string; prev: IncidentStatus; label: string } | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
   const navigate = useNavigate();
 
   const reload = useCallback(async () => {
@@ -134,12 +60,37 @@ export function IncidentsScreen() {
     }
   };
 
+  // Status changes fire instantly, so every transition leaves an Undo behind for
+  // a few seconds instead of asking for confirmation up front.
+  const transition = async (inc: Incident, to: IncidentStatus, label: string) => {
+    const prev = inc.status;
+    let notes: string | undefined;
+    if (to === "dismissed") {
+      notes = window.prompt("Why is this incident being dismissed?")?.trim();
+      if (!notes) return;
+    }
+    await patch(inc.id, { status: to, ...(notes ? { notes } : {}) });
+    setUndo({ id: inc.id, prev, label });
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
+  };
+
+  const doUndo = async () => {
+    if (!undo) return;
+    window.clearTimeout(undoTimer.current);
+    const target = undo;
+    setUndo(null);
+    await patch(target.id, { status: target.prev });
+  };
+
+  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
+
   return (
-    <div className="page">
+    <div className="page incidents-page">
       <div className="page-head">
-        <div className="eyebrow">Inbox</div>
-        <h1>Incidents</h1>
-        <p className="page-sub">SigNoz alerts open cases here. Scrub the run, fork it, prove the fix.</p>
+        <div className="eyebrow">Incident queue</div>
+        <h1>Find the break. Prove the fix.</h1>
+        <p className="page-sub">SigNoz alerts become replayable cases: inspect, fork, compare, resolve.</p>
       </div>
 
       <TraceLookup onCreateIncident={createIncident} />
@@ -163,83 +114,92 @@ run.end({ outcome: "success" });`}</pre>
       )}
 
       {incidents && incidents.length > 0 && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Severity</th>
-              <th>Agent</th>
-              <th>Alert</th>
-              <th>Age</th>
-              <th>Status</th>
-              <th>Trace</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {incidents.map((inc) => (
-              <tr key={inc.id} onClick={() => navigate(`/runs/${inc.traceId}`)}>
-                <td><SeverityBadge severity={inc.severity} /></td>
-                <td className="td-mono">{inc.agentId}</td>
-                <td>
-                  {inc.alertName}
-                  {inc.notes && <div className="inc-notes">{inc.notes}</div>}
-                </td>
-                <td className="td-mono muted">{timeAgo(inc.createdAt)}</td>
-                <td><IncidentStatusBadge status={inc.status} /></td>
-                <td>
-                  <span className="trace-link">{shortId(inc.traceId)}…</span>
-                </td>
-                <td className="inc-actions" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    type="button"
-                    onClick={() => setPostmortemId(inc.id)}
-                  >
-                    Postmortem
-                  </button>
-                  {(inc.status === "open" || inc.status === "diagnosed") && (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      type="button"
-                      onClick={() => setResolving(inc)}
-                    >
-                      Resolve via fork
-                    </button>
-                  )}
-                  {inc.forkTraceId && (
-                    <Link
-                      className="btn btn-ghost btn-sm"
-                      to={`/compare?original=${encodeURIComponent(inc.traceId)}&fork=${encodeURIComponent(inc.forkTraceId)}`}
-                    >
-                      Compare
-                    </Link>
-                  )}
-                  {transitionsFor(inc.status).map((t) => (
-                    <button
-                      key={t.to}
-                      className="btn btn-ghost btn-sm"
-                      type="button"
-                      onClick={() => void patch(inc.id, { status: t.to })}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </td>
+        <div className="table-shell">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Agent</th>
+                <th>Alert</th>
+                <th>Age</th>
+                <th>Status</th>
+                <th>Trace</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {incidents.map((inc) => (
+                <tr
+                  key={inc.id}
+                  tabIndex={0}
+                  onClick={() =>
+                    navigate(`/runs/${inc.traceId}?incident=${encodeURIComponent(inc.id)}`)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter") {
+                      navigate(`/runs/${inc.traceId}?incident=${encodeURIComponent(inc.id)}`);
+                    }
+                  }}
+                >
+                  <td><SeverityBadge severity={inc.severity} /></td>
+                  <td className="td-mono">{inc.agentId}</td>
+                  <td>
+                    {inc.alertName}
+                    {inc.notes && <div className="inc-notes">{inc.notes}</div>}
+                  </td>
+                  <td className="td-mono muted">{timeAgo(inc.createdAt)}</td>
+                  <td><IncidentStatusBadge status={inc.status} /></td>
+                  <td>
+                    <span className="trace-link">{shortId(inc.traceId)}…</span>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div className="inc-actions">
+                      {inc.status === "verifying" && (
+                        <span className="muted td-mono">verifying fork…</span>
+                      )}
+                      {inc.forkTraceId && (
+                        <Link
+                          className="btn btn-ghost btn-sm"
+                          to={`/compare?original=${encodeURIComponent(inc.traceId)}&fork=${encodeURIComponent(inc.forkTraceId)}`}
+                        >
+                          Compare
+                        </Link>
+                      )}
+                      <details className="act-menu">
+                        <summary className="btn btn-ghost btn-sm act-menu-btn" aria-label="more actions">⋯</summary>
+                        <div className="act-pop">
+                          {inc.status === "resolved" && inc.verification?.verified && (
+                            <button type="button" onClick={() => setPostmortemId(inc.id)}>
+                              Postmortem
+                            </button>
+                          )}
+                          {transitionsFor(inc.status).map((t) => (
+                            <button key={t.to} type="button" onClick={() => void transition(inc, t.to, t.label)}>
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {postmortemId && (
         <PostmortemModal incidentId={postmortemId} onClose={() => setPostmortemId(null)} />
       )}
-      {resolving && (
-        <ResolveViaForkModal
-          incident={resolving}
-          onClose={() => setResolving(null)}
-          onDone={reload}
-        />
+      {undo && (
+        <div className="toast" role="status">
+          <span>{undo.label} · {shortId(undo.id)}</span>
+          <button className="toast-undo" type="button" onClick={() => void doUndo()}>
+            Undo
+          </button>
+        </div>
       )}
     </div>
   );

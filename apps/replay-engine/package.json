@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "tsx --test src/rungraph/builder.test.ts src/compare/diff.test.ts src/fork/executor.test.ts"
+    "test": "tsx --test src/config.test.ts src/rungraph/builder.test.ts src/replay/replay.test.ts src/compare/diff.test.ts src/fork/executor.test.ts src/webhooks/signoz.test.ts src/incidents/store.test.ts src/incidents/verify.test.ts src/routes.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
@@ -16,8 +16,10 @@
     "@hindsight/recorder": "workspace:*",
     "@hindsight/shared": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.220.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
     "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-metrics": "^2.9.0",
     "@opentelemetry/sdk-trace-node": "^2.9.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "better-sqlite3": "^12.11.1",

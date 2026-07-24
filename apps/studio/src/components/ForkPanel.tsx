@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import type { MockPolicy, Mutation, RunStep } from "@hindsight/shared";
+import type {
+  CheckpointReport,
+  ForkRunnerCapability,
+  MockPolicy,
+  Mutation,
+  RunStep,
+} from "@hindsight/shared";
 import { api } from "../api";
 import { friendlyError } from "./ErrorNote";
 
@@ -12,6 +18,14 @@ const MUTATION_TYPES: Mutation["type"][] = [
   "params",
   "disable_tool",
 ];
+
+const MUTATION_LABELS: Record<Mutation["type"], string> = {
+  model_swap: "Swap model",
+  prompt_edit: "Edit prompt",
+  tool_output_override: "Override tool output",
+  params: "Params",
+  disable_tool: "Disable tool",
+};
 
 const MODEL_SUGGESTIONS = [
   "claude-haiku-4-5",
@@ -24,11 +38,14 @@ const MODEL_SUGGESTIONS = [
 const POLICY_HINTS: Record<MockPolicy, string> = {
   strict: "All tools answered from recordings (args-hash match). Unmatched call → fail fast. Pure test of the model's reasoning.",
   hybrid: "Hash match → mock. No match → run live if the tool is safe; side-effectful tools (send, write, pay) return a dry-run stub.",
-  live: "Everything live; side-effectful tools still gated behind a confirm.",
 };
 
 interface Props {
   traceId: string;
+  agentId: string;
+  agentRevision?: string;
+  checkpoint?: CheckpointReport;
+  incidentId?: string;
   step: RunStep;
   /** Distinct tool names seen in this run — feeds the disable_tool select. */
   tools: string[];
@@ -40,7 +57,15 @@ function systemPromptOf(step: RunStep): string {
   return typeof sys.content === "string" ? sys.content : JSON.stringify(sys.content, null, 2);
 }
 
-export function ForkPanel({ traceId, step, tools }: Props) {
+export function ForkPanel({
+  traceId,
+  agentId,
+  agentRevision,
+  checkpoint,
+  incidentId,
+  step,
+  tools,
+}: Props) {
   const navigate = useNavigate();
   const [type, setType] = useState<Mutation["type"]>(
     step.kind === "tool" && step.error ? "tool_output_override" : "model_swap",
@@ -63,6 +88,55 @@ export function ForkPanel({ traceId, step, tools }: Props) {
   const [policy, setPolicy] = useState<MockPolicy>("hybrid");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runner, setRunner] = useState<ForkRunnerCapability | null>(null);
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const idempotencyKey = useRef(crypto.randomUUID());
+
+  useEffect(() => {
+    let alive = true;
+    api.capabilities()
+      .then((capabilities) => {
+        if (!alive) return;
+        setRunner(
+          capabilities.runners.find(
+            (candidate) =>
+              candidate.agentId === agentId &&
+              (!agentRevision || candidate.revision === agentRevision),
+          ) ?? null,
+        );
+        setCapabilitiesLoaded(true);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(friendlyError(err).title);
+        setCapabilitiesLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [agentId, agentRevision]);
+
+  const mutationTypes = MUTATION_TYPES.filter(
+    (candidate) =>
+      runner?.mutations.includes(candidate) &&
+      (candidate !== "tool_output_override" || step.kind === "tool"),
+  );
+  useEffect(() => {
+    if (mutationTypes.length > 0 && !mutationTypes.includes(type)) {
+      setType(mutationTypes[0]);
+    }
+  }, [mutationTypes, type]);
+
+  const canFork =
+    capabilitiesLoaded &&
+    runner?.available === true &&
+    checkpoint?.complete === true &&
+    mutationTypes.length > 0;
+
+  const replayNote =
+    step.index <= 0
+      ? "The registered agent runtime starts at step #0 with recorded tool dependencies."
+      : `The runner rebuilds recorded state before #${step.index}, then executes the branch with the selected policy.`;
 
   const buildMutation = (): Mutation => {
     switch (type) {
@@ -115,8 +189,13 @@ export function ForkPanel({ traceId, step, tools }: Props) {
         forkAtStep: step.index,
         mutation,
         mockPolicy: policy,
+        incidentId,
+        idempotencyKey: idempotencyKey.current,
       });
-      navigate(`/compare?original=${encodeURIComponent(traceId)}&fork=${encodeURIComponent(result.forkTraceId)}`);
+      navigate(
+        `/compare?original=${encodeURIComponent(traceId)}&fork=${encodeURIComponent(result.forkTraceId)}`,
+        { state: { verification: result.verification } },
+      );
     } catch (err) {
       const info = friendlyError(err);
       setError(info.hint ? `${info.title} — ${info.hint}` : info.title);
@@ -131,15 +210,37 @@ export function ForkPanel({ traceId, step, tools }: Props) {
         mutation is applied.
       </div>
 
+      <div className="policy-hint">
+        checkpoint {checkpoint?.complete ? "complete" : "incomplete"} · schema{" "}
+        {checkpoint?.schemaVersion ?? "unknown"} · revision {agentRevision ?? "unknown"} · runner{" "}
+        {!capabilitiesLoaded ? "checking…" : runner?.available ? "available" : "unavailable"}
+      </div>
+      {!checkpoint?.complete && (
+        <div className="form-error">
+          Fork disabled: {checkpoint?.issues.map((issue) => issue.detail).join("; ") || "checkpoint evidence is missing"}.
+        </div>
+      )}
+      {capabilitiesLoaded && !runner?.available && (
+        <div className="form-error">
+          Fork disabled: no available runner matches {agentId} revision{" "}
+          {agentRevision ?? "unknown"}.
+        </div>
+      )}
+      {capabilitiesLoaded && runner?.available && mutationTypes.length === 0 && (
+        <div className="form-error">
+          Fork disabled: this runner has no supported mutation for the selected step.
+        </div>
+      )}
+
       <div className="mutation-tabs">
-        {MUTATION_TYPES.map((t) => (
+        {mutationTypes.map((t) => (
           <button
             key={t}
             type="button"
             className={`mtab ${t === type ? "selected" : ""}`}
             onClick={() => setType(t)}
           >
-            {t}
+            {MUTATION_LABELS[t]}
           </button>
         ))}
       </div>
@@ -259,7 +360,7 @@ export function ForkPanel({ traceId, step, tools }: Props) {
 
       <label className="field-label">mock policy</label>
       <div className="radio-row">
-        {(["strict", "hybrid", "live"] as MockPolicy[]).map((p) => (
+        {(["strict", "hybrid"] as MockPolicy[]).map((p) => (
           <label key={p} className={`radio-pill ${policy === p ? "selected" : ""}`}>
             <input
               type="radio"
@@ -274,10 +375,11 @@ export function ForkPanel({ traceId, step, tools }: Props) {
       </div>
       <div className="policy-hint">{POLICY_HINTS[policy]}</div>
 
-      <div className="row">
-        <button className="btn btn-ember" type="submit" disabled={busy}>
+      <div className="fork-run">
+        <button className="btn btn-ember" type="submit" disabled={busy || !canFork}>
           {busy ? "Running fork…" : "Run fork"}
         </button>
+        <span className="fork-run-note">{replayNote}</span>
       </div>
       {error && <div className="form-error">{error}</div>}
     </form>

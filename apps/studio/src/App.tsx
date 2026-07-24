@@ -7,9 +7,9 @@ import { CompareScreen } from "./screens/CompareScreen";
 
 export function App() {
   return (
-    <div>
+    <div className="app-shell">
       <AppHeader />
-      <main className="wrap">
+      <main className="app-main">
         <Routes>
           <Route path="/" element={<Navigate to="/incidents" replace />} />
           <Route path="/incidents" element={<IncidentsScreen />} />

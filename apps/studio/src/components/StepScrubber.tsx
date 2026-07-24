@@ -15,7 +15,7 @@ function tooltip(s: RunStep): string {
 
 export function StepScrubber({ steps, selected, onSelect }: Props) {
   return (
-    <div className="scrubber" role="tablist" aria-label="run steps">
+    <nav className="scrubber" aria-label="Run steps">
       {steps.map((s) => {
         const cls = [
           "step-dot",
@@ -30,8 +30,8 @@ export function StepScrubber({ steps, selected, onSelect }: Props) {
             key={s.spanId}
             type="button"
             className={cls}
-            role="tab"
-            aria-selected={selected === s.index}
+            aria-current={selected === s.index ? "step" : undefined}
+            aria-label={tooltip(s)}
             title={tooltip(s)}
             onClick={() => onSelect(s.index)}
           >
@@ -39,6 +39,6 @@ export function StepScrubber({ steps, selected, onSelect }: Props) {
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

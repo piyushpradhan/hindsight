@@ -10,6 +10,7 @@ import { createRecorder } from "@hindsight/recorder";
 import {
   RESEARCH_AGENT,
   SUPPORT_AGENT,
+  createAnthropicHttpProvider,
   runAgentSpec,
   parseChaos,
 } from "../src/index.js";
@@ -17,9 +18,18 @@ import {
 async function main(): Promise<void> {
   const recorder = createRecorder({ recordPayloads: "always" });
   const chaos = parseChaos(process.env.CHAOS);
+  const provider =
+    process.env.HINDSIGHT_DEMO_PROVIDER === "anthropic"
+      ? createAnthropicHttpProvider(requiredEnv("ANTHROPIC_API_KEY"))
+      : undefined;
 
   for (const spec of [RESEARCH_AGENT, SUPPORT_AGENT]) {
-    const res = await runAgentSpec(spec, { recorder, seed: 0, taskId: `${spec.agentId}-demo` });
+    const res = await runAgentSpec(spec, {
+      recorder,
+      provider,
+      seed: 0,
+      taskId: `${spec.agentId}-demo`,
+    });
     console.log(`[${spec.agentId}] outcome=${res.outcome} steps=${res.steps} trace=${res.traceId}`);
     console.log(`   final: ${res.finalContent}`);
   }
@@ -30,6 +40,12 @@ async function main(): Promise<void> {
   }
 
   await recorder.shutdown();
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }
 
 main().catch((err) => {

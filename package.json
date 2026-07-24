@@ -6,9 +6,11 @@
   "scripts": {
     "build": "pnpm -r --filter='./packages/*' build && pnpm -r --filter='./apps/*' build",
     "typecheck": "pnpm -r typecheck",
-    "dev": "pnpm -r --parallel dev"
+    "dev": "pnpm -r --parallel dev",
+    "validate:infra": "tsx scripts/validate-infra.ts"
   },
   "devDependencies": {
+    "tsx": "^4.23.1",
     "typescript": "^5.6.3"
   }
 }

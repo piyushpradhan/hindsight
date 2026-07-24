@@ -1,134 +1,197 @@
-/**
- * Fork executor check: a failed original run, forked at the poisoned tool step
- * with a corrected output, re-executes to success. Uses a stub SigNoz reader so
- * no live instance is needed; the recorder exports to a dead OTLP endpoint,
- * which fails silently (allSettled) and does not affect the computed outcome.
- */
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { test } from "node:test";
-import { ATTR, GENAI_ATTR, PAYLOAD_LOG_MARKER, type ForkRequest } from "@hindsight/shared";
-import { hashToolArgs } from "@hindsight/recorder";
-import { DemoForkExecutor, type SignozReader } from "./executor.js";
-import type { PayloadLogInput, SpanInput } from "../rungraph/builder.js";
+import type { ForkRequest, RunnerForkRequest } from "@hindsight/shared";
+import {
+  ForkExecutionError,
+  HttpForkExecutor,
+  type SignozReader,
+} from "./executor.js";
+import {
+  TRACE_ID,
+  fixturePayloadLogs,
+  fixtureSpans,
+} from "../rungraph/builder.test-fixture.js";
 
-const TRACE = "aaaabbbbccccdddd";
-const ARGS = { query: "turbine capacity factor GWh" };
-const ARGS_HASH = hashToolArgs(ARGS);
+const FORK_TRACE = "22222222222222222222222222222222";
 
-const spans: SpanInput[] = [
-  {
-    traceId: TRACE,
-    spanId: "root",
-    name: "run research",
-    startTime: "2026-07-21T00:00:00.000Z",
-    durationNano: 1_000_000_000,
-    attributes: {
-      [ATTR.RUN_ID]: "r1",
-      [ATTR.AGENT_ID]: "research",
-      [ATTR.OUTCOME]: "failure",
+test("HTTP runner receives a complete checkpoint and idempotent retries run once", async (t) => {
+  let posts = 0;
+  let received: RunnerForkRequest | undefined;
+  const server = createServer(async (request, response) => {
+    if (request.url === "/hindsight/capabilities") {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          runners: [
+            {
+              agentId: "agent-1",
+              revision: "agent-1@abc123",
+              available: true,
+              mutations: ["model_swap", "tool_output_override", "prompt_edit", "params"],
+              safeLiveTools: [],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    posts++;
+    received = JSON.parse(await body(request)) as RunnerForkRequest;
+    response.setHeader("content-type", "application/json");
+    response.end(
+      JSON.stringify({
+        forkRunId: "fork-run",
+        forkTraceId: FORK_TRACE,
+        outcome: "success",
+        stepCount: 2,
+        runnerRevision: "agent-1@abc123",
+        appliedMutationHash: received.mutationHash,
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const executor = new HttpForkExecutor(reader(), {
+    runners: {
+      "agent-1": {
+        url: `http://127.0.0.1:${address.port}`,
+        revision: "agent-1@abc123",
+      },
     },
-  },
-  {
-    traceId: TRACE,
-    spanId: "s0",
-    parentSpanId: "root",
-    name: "claude-haiku-4-5",
-    startTime: "2026-07-21T00:00:00.100Z",
-    durationNano: 200_000_000,
-    attributes: {
-      [ATTR.STEP_INDEX]: 0,
-      [ATTR.STEP_KIND]: "llm",
-      [ATTR.PAYLOAD_REF]: "r1:0",
-      [GENAI_ATTR.REQUEST_MODEL]: "claude-haiku-4-5",
-      [GENAI_ATTR.INPUT_TOKENS]: 40,
-      [GENAI_ATTR.OUTPUT_TOKENS]: 12,
+    timeoutMs: 2_000,
+  });
+  const request = {
+    traceId: TRACE_ID,
+    forkAtStep: 0,
+    mutation: { type: "model_swap" as const, model: "claude-sonnet-4-5" },
+    mockPolicy: "strict" as const,
+    idempotencyKey: "same-request",
+  };
+  const first = await executor.execute(request);
+  const second = await executor.execute(request);
+
+  assert.equal(posts, 1);
+  assert.deepEqual(second, first);
+  assert.equal(first.forkTraceId, FORK_TRACE);
+  assert.equal(received?.checkpoint.originalSpanId, "root01");
+  assert.equal(received?.checkpoint.steps.length, 4);
+  assert.equal(received?.checkpoint.agentRevision, "agent-1@abc123");
+});
+
+test("missing payload fails closed before a runner is contacted", async () => {
+  const executor = new HttpForkExecutor(reader(fixturePayloadLogs().slice(1)), {
+    runners: {},
+    timeoutMs: 100,
+  });
+  await assert.rejects(
+    executor.execute({
+      traceId: TRACE_ID,
+      forkAtStep: 0,
+      mutation: { type: "model_swap", model: "claude-sonnet-4-5" },
+      mockPolicy: "strict",
+    }),
+    (error: unknown) =>
+      error instanceof ForkExecutionError &&
+      error.code === "incomplete_record" &&
+      /step 0/.test(error.message),
+  );
+});
+
+test("nonexistent tool-output target is rejected", async (t) => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(
+      JSON.stringify({
+        runners: [
+          {
+            agentId: "agent-1",
+            revision: "agent-1@abc123",
+            available: true,
+            mutations: ["tool_output_override"],
+            safeLiveTools: [],
+          },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const executor = new HttpForkExecutor(reader(), {
+    runners: {
+      "agent-1": {
+        url: `http://127.0.0.1:${address.port}`,
+        revision: "agent-1@abc123",
+      },
     },
-  },
-  {
-    traceId: TRACE,
-    spanId: "s1",
-    parentSpanId: "root",
-    name: "web_search",
-    startTime: "2026-07-21T00:00:00.400Z",
-    durationNano: 100_000_000,
-    attributes: {
-      [ATTR.STEP_INDEX]: 1,
-      [ATTR.STEP_KIND]: "tool",
-      [ATTR.PAYLOAD_REF]: "r1:1",
-      [ATTR.ARGS_HASH]: ARGS_HASH,
-      [GENAI_ATTR.ERROR_TYPE]: "MalformedToolJsonError",
+    timeoutMs: 1_000,
+  });
+  await assert.rejects(
+    executor.execute({
+      traceId: TRACE_ID,
+      forkAtStep: 99,
+      mutation: { type: "tool_output_override", stepIndex: 99, output: "fixed" },
+      mockPolicy: "strict",
+    }),
+    (error: unknown) =>
+      error instanceof ForkExecutionError && error.code === "invalid_mutation_target",
+  );
+});
+
+test("no-op mutations are rejected before contacting the runner", async () => {
+  const executor = new HttpForkExecutor(reader(), {
+    runners: {
+      "agent-1": {
+        url: "http://127.0.0.1:1",
+        revision: "agent-1@abc123",
+      },
     },
-  },
-];
-
-const logs: PayloadLogInput[] = [
-  {
-    marker: PAYLOAD_LOG_MARKER,
-    payloadRef: "r1:0",
-    stepIndex: 0,
-    kind: "llm",
-    request: [{ role: "user", content: "How many GWh?" }],
-    response: { content: "Calling web_search" },
-    spanId: "s0",
-  },
-  {
-    marker: PAYLOAD_LOG_MARKER,
-    payloadRef: "r1:1",
-    stepIndex: 1,
-    kind: "tool",
-    args: ARGS,
-    output: { error: "malformed JSON from tool" },
-    spanId: "s1",
-  },
-];
-
-const stubSignoz: SignozReader = {
-  async getSpansForTrace() {
-    return spans;
-  },
-  async getPayloadLogs() {
-    return logs;
-  },
-};
-
-test("fork of a failed run with corrected tool output re-executes to success", async () => {
-  const exec = new DemoForkExecutor(stubSignoz, { otlpHttpUrl: "http://127.0.0.1:4318" });
-  const request: ForkRequest = {
-    traceId: TRACE,
-    forkAtStep: 1,
-    mutation: {
+    timeoutMs: 100,
+  });
+  const noOps: ForkRequest["mutation"][] = [
+    { type: "model_swap", model: "gpt-4o" },
+    { type: "prompt_edit", newSystemPrompt: "You are a demo agent." },
+    { type: "params", temperature: 0.2, maxTokens: 512 },
+    {
       type: "tool_output_override",
       stepIndex: 1,
-      output: { query: ARGS.query, results: [{ title: "valid", snippet: "0.4 capacity factor" }] },
+      output: ["result-1", "result-2"],
     },
-    mockPolicy: "hybrid",
-  };
-
-  const result = await exec.execute(request);
-
-  assert.equal(result.originalTraceId, TRACE);
-  assert.equal(result.outcome, "success", "fork should pass where the original failed");
-  assert.ok(result.forkTraceId.length > 0, "fork must produce a new trace id");
-  assert.notEqual(result.forkTraceId, TRACE, "fork trace must differ from the original");
-  assert.ok(result.stepCount >= 1);
+  ];
+  for (const mutation of noOps) {
+    await assert.rejects(
+      executor.execute({
+        traceId: TRACE_ID,
+        forkAtStep: mutation.type === "tool_output_override" ? 1 : 0,
+        mutation,
+        mockPolicy: "strict",
+        idempotencyKey: `no-op-${mutation.type}`,
+      }),
+      (error: unknown) =>
+        error instanceof ForkExecutionError &&
+        error.code === "invalid_mutation_target",
+    );
+  }
 });
 
-test("missing original run returns a graceful failure result", async () => {
-  const empty: SignozReader = {
+function reader(logs = fixturePayloadLogs()): SignozReader {
+  return {
     async getSpansForTrace() {
-      return [];
+      return fixtureSpans();
     },
     async getPayloadLogs() {
-      return [];
+      return logs;
     },
   };
-  const exec = new DemoForkExecutor(empty, { otlpHttpUrl: "http://127.0.0.1:4318" });
-  const result = await exec.execute({
-    traceId: "missing",
-    forkAtStep: 0,
-    mutation: { type: "model_swap", model: "claude-sonnet-4-5" },
-    mockPolicy: "strict",
-  });
-  assert.equal(result.outcome, "failure");
-  assert.equal(result.error, "original run not found");
-});
+}
+
+async function body(request: import("node:http").IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}

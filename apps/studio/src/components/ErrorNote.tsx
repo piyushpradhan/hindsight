@@ -19,11 +19,33 @@ export function friendlyError(err: unknown): FriendlyError {
           title: "SigNoz is unreachable from the engine",
           hint: err.detail ?? "Check that SigNoz is up at http://localhost:8080.",
         };
-      case ERR.forkExecutorPending:
+      case ERR.runnerUnavailable:
         return {
-          title: "Fork executor is starting up — try again shortly",
-          hint: "The engine answered 501: the fork executor is not wired in yet.",
+          title: "No compatible runner is available",
+          hint: err.detail ?? "Register this agent and revision in HINDSIGHT_RUNNERS, then start its runner.",
         };
+      case ERR.runnerTimeout:
+        return { title: "The agent runner timed out", hint: err.detail };
+      case ERR.runnerRejected:
+      case ERR.runnerProtocolError:
+        return { title: "The agent runner rejected the fork", hint: err.detail };
+      case ERR.incompleteRecord:
+        return {
+          title: "This recording is incomplete",
+          hint: err.detail ?? "A fork needs every recorded request, response, tool-call ID, and matching payload hash.",
+        };
+      case ERR.unsupportedMutation:
+      case ERR.invalidMutationTarget:
+        return { title: "That mutation cannot be applied here", hint: err.detail };
+      case ERR.idempotencyConflict:
+        return { title: "This fork request conflicts with an earlier attempt", hint: err.detail };
+      case ERR.verifiedResolutionRequired:
+        return { title: "A verified fork is required", hint: err.detail };
+      case ERR.incidentTraceMismatch:
+      case ERR.incidentNotOpen:
+        return { title: "This incident cannot accept that fork", hint: err.detail };
+      case ERR.dismissalReasonRequired:
+        return { title: "A dismissal reason is required", hint: err.detail };
       case ERR.runNotFound:
         return {
           title: "Run not found",

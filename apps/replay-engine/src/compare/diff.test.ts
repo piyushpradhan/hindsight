@@ -25,7 +25,7 @@ function graph(steps: RunStep[], overrides: Partial<RunGraph["run"]> = {}): RunG
       outcome: "success",
       stepCount: steps.length,
       totalTokens: steps.reduce((n, s) => n + (s.inputTokens ?? 0) + (s.outputTokens ?? 0), 0),
-      costUsd: steps.reduce((n, s) => n + s.costUsd, 0),
+      costUsd: steps.reduce((n, s) => n + (s.costUsd ?? 0), 0),
       ...overrides,
     },
   };
@@ -70,7 +70,7 @@ test("compareRuns: deltas, outcome flip, alignment, output diff", () => {
   );
   const result = compareRuns(original, fork);
   assert.equal(result.deltaTokens, 2);
-  assert.ok(result.deltaCostUsd < 0, "fork dropped a paid step");
+  assert.ok(result.deltaCostUsd !== null && result.deltaCostUsd < 0, "fork dropped a paid step");
   assert.equal(result.deltaSteps, -1);
   assert.equal(result.deltaLatencyMs, 1000);
   assert.equal(result.outcomeChanged, true);

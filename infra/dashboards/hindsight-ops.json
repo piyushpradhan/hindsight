@@ -1,7 +1,8 @@
 {
-  "//": "Hindsight :: Ops (meta-dashboard). Config-as-code, importable via SigNoz UI (Dashboards -> Import JSON) or POST /api/v1/dashboards. Built against SigNoz EE v0.133.0 builder-query schema (see apps/replay-engine/src/signoz/client.ts). Metric names frozen in packages/shared/src/telemetry.ts (METRIC.*). MTTR-for-agents and '$ saved by fork' are derived via query formulas over emitted counters. VALIDATE ON IMPORT: authored offline; the dashboards API requires auth.",
+  "//": "UNINSTALLED TEMPLATE. Hindsight :: Ops is importable via SigNoz UI or POST /api/v1/dashboards. Built against SigNoz v0.133.x; installation must be confirmed by the SigNoz API.",
+  "hindsightInstallStatus": "template_uninstalled",
   "title": "Hindsight :: Ops",
-  "description": "The meta-dashboard. Incidents opened, forks run, MTTR-for-agents (incident created -> resolved-via-fork), and $ saved by fork vs full re-run.",
+  "description": "Measured incidents opened, forks run, and verified incident resolution duration.",
   "tags": ["hindsight", "ops", "meta"],
   "version": "v4",
   "uploadedGrafana": false,
@@ -9,8 +10,7 @@
   "layout": [
     { "i": "incidents-opened", "x": 0, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
     { "i": "forks-run", "x": 6, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
-    { "i": "mttr-agents", "x": 0, "y": 6, "w": 6, "h": 6, "moved": false, "static": false },
-    { "i": "dollars-saved", "x": 6, "y": 6, "w": 6, "h": 6, "moved": false, "static": false }
+    { "i": "mttr-agents", "x": 0, "y": 6, "w": 12, "h": 6, "moved": false, "static": false }
   ],
   "widgets": [
     {
@@ -83,10 +83,10 @@
     },
     {
       "id": "mttr-agents",
-      "title": "MTTR for agents (incident -> resolved-via-fork)",
-      "description": "Ratio of open incidents to fork-resolutions is a proxy for how many incidents get closed by a fork. Where the recorder emits per-incident resolve latency this panel should be swapped for avg(hindsight.step.duration{step.kind=resolve}); until then it tracks resolution coverage.",
+      "title": "Verified incident resolution duration",
+      "description": "Measured time from incident creation to a verified fork resolution.",
       "panelTypes": "value",
-      "yAxisUnit": "percentunit",
+      "yAxisUnit": "ms",
       "query": {
         "queryType": "builder",
         "builder": {
@@ -94,100 +94,24 @@
             {
               "queryName": "A",
               "dataSource": "metrics",
-              "aggregateOperator": "sum_rate",
+              "aggregateOperator": "avg",
               "aggregateAttribute": {
-                "key": "hindsight.forks.resolved.total",
+                "key": "hindsight.incident.resolution.duration",
                 "dataType": "float64",
-                "type": "Sum",
+                "type": "Histogram",
                 "isColumn": true
               },
-              "timeAggregation": "increase",
-              "spaceAggregation": "sum",
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
               "filters": { "op": "AND", "items": [] },
               "groupBy": [],
               "expression": "A",
-              "disabled": true,
-              "reduceTo": "sum",
-              "legend": "resolved via fork"
-            },
-            {
-              "queryName": "B",
-              "dataSource": "metrics",
-              "aggregateOperator": "sum_rate",
-              "aggregateAttribute": {
-                "key": "hindsight.incidents.total",
-                "dataType": "float64",
-                "type": "Sum",
-                "isColumn": true
-              },
-              "timeAggregation": "increase",
-              "spaceAggregation": "sum",
-              "filters": { "op": "AND", "items": [] },
-              "groupBy": [],
-              "expression": "B",
-              "disabled": true,
-              "reduceTo": "sum",
-              "legend": "incidents opened"
+              "disabled": false,
+              "reduceTo": "avg",
+              "legend": "resolution duration"
             }
           ],
-          "queryFormulas": [
-            { "queryName": "F1", "expression": "A/B", "legend": "fork resolution coverage", "disabled": false }
-          ]
-        }
-      }
-    },
-    {
-      "id": "dollars-saved",
-      "title": "$ saved by fork vs full re-run",
-      "description": "A fork replays from a fork point instead of re-running the whole task. Savings = (full re-run cost) - (fork cost). Approximated as total cost avoided: hindsight.forks.resolved.total x avg hindsight.cost.usd per run, minus the (smaller) fork cost already counted in hindsight.cost.usd.total. Tune the multiplier to your average run cost.",
-      "panelTypes": "value",
-      "yAxisUnit": "currencyUSD",
-      "query": {
-        "queryType": "builder",
-        "builder": {
-          "queryData": [
-            {
-              "queryName": "A",
-              "dataSource": "metrics",
-              "aggregateOperator": "sum_rate",
-              "aggregateAttribute": {
-                "key": "hindsight.forks.resolved.total",
-                "dataType": "float64",
-                "type": "Sum",
-                "isColumn": true
-              },
-              "timeAggregation": "increase",
-              "spaceAggregation": "sum",
-              "filters": { "op": "AND", "items": [] },
-              "groupBy": [],
-              "expression": "A",
-              "disabled": true,
-              "reduceTo": "sum",
-              "legend": "forks resolved"
-            },
-            {
-              "queryName": "B",
-              "dataSource": "metrics",
-              "aggregateOperator": "sum_rate",
-              "aggregateAttribute": {
-                "key": "hindsight.cost.usd.total",
-                "dataType": "float64",
-                "type": "Sum",
-                "isColumn": true
-              },
-              "timeAggregation": "increase",
-              "spaceAggregation": "sum",
-              "filters": { "op": "AND", "items": [] },
-              "groupBy": [],
-              "expression": "B",
-              "disabled": true,
-              "reduceTo": "sum",
-              "legend": "total cost spent"
-            }
-          ],
-          "queryFormulas": [
-            { "queryName": "F1", "expression": "A * (B / (A + 1)) - B", "legend": "$ saved vs full re-run", "disabled": false }
-          ]
+          "queryFormulas": []
         }
       }
     }

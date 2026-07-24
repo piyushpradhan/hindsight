@@ -1,5 +1,6 @@
 {
-  "//": "Hindsight :: Agent Reliability dashboard. Config-as-code, importable via SigNoz UI (Dashboards -> Import JSON) or POST /api/v1/dashboards. Built against SigNoz EE v0.133.0 builder-query schema (see apps/replay-engine/src/signoz/client.ts). Metric names are frozen in packages/shared/src/telemetry.ts (METRIC.*) and attribute names in ATTR.*. VALIDATE ON IMPORT: this JSON was authored offline (dashboards API requires auth); confirm panel ids do not collide on your instance.",
+  "//": "UNINSTALLED TEMPLATE. Import through SigNoz and confirm installation through its API. Built against SigNoz v0.133.x.",
+  "hindsightInstallStatus": "template_uninstalled",
   "title": "Hindsight :: Agent Reliability",
   "description": "Per-agent success rate, incident count, p95 step latency and tool error rate. Grouped by hindsight.agent.id.",
   "tags": ["hindsight", "agents", "reliability"],

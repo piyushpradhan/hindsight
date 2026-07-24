@@ -1,5 +1,6 @@
 {
-  "//": "Hindsight alert :: latency drift. Anomaly rule on p95 hindsight.step.duration. SigNoz EE v0.133.0 supports anomaly detection (ruleType 'anomaly_rule'); if your build lacks it, change ruleType to 'threshold_rule' and set condition.op/target to a fixed p95 ceiling. Fires to 'hindsight-replay-engine' webhook channel -> http://localhost:4123/hooks/signoz. Metric name frozen in packages/shared/src/telemetry.ts (METRIC.STEP_DURATION). VALIDATE ON IMPORT: authored offline; the rules API requires auth.",
+  "//": "UNINSTALLED TEMPLATE. Fleet-only notification; no incident webhook because aggregate metrics have no authoritative trace_id.",
+  "hindsightInstallStatus": "template_uninstalled",
   "alert": "Hindsight: step latency drift (p95 anomaly)",
   "alertType": "METRIC_BASED_ALERT",
   "ruleType": "anomaly_rule",
@@ -40,5 +41,5 @@
     "summary": "Latency drift: agent {{$labels.hindsight.agent.id}} p95 step duration anomalous ({{$value}})",
     "description": "p95 step duration deviated from its seasonal baseline. Often precedes a run failure; the replay-engine records it for postmortem correlation."
   },
-  "preferredChannels": ["hindsight-replay-engine"]
+  "preferredChannels": []
 }

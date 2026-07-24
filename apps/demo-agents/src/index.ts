@@ -52,5 +52,12 @@ export {
 export type { ChaosMode } from "./chaos.js";
 
 // Optional real-provider seam.
-export { createAnthropicProvider, anthropicAvailable } from "./anthropic-provider.js";
+export {
+  createAnthropicHttpProvider,
+  createAnthropicProvider,
+  anthropicAvailable,
+} from "./anthropic-provider.js";
 export type { AnthropicLike } from "./anthropic-provider.js";
+
+export { executeRunnerFork, SUPPORTED_MUTATIONS } from "./fork-runner.js";
+export type { DemoRunnerOptions } from "./fork-runner.js";

@@ -1,5 +1,6 @@
 import type {
   AgentFleetStat,
+  Capabilities,
   CompareResult,
   ForkRequest,
   ForkResult,
@@ -57,7 +58,18 @@ export const MOCK_MODE = (() => {
 export const ERR = {
   signozAuthMissing: "signoz_auth_missing",
   signozUnavailable: "signoz_unavailable",
-  forkExecutorPending: "fork_executor_pending",
+  runnerUnavailable: "runner_unavailable",
+  runnerTimeout: "runner_timeout",
+  runnerRejected: "runner_rejected",
+  runnerProtocolError: "runner_protocol_error",
+  incompleteRecord: "incomplete_record",
+  unsupportedMutation: "unsupported_mutation",
+  invalidMutationTarget: "invalid_mutation_target",
+  idempotencyConflict: "idempotency_conflict",
+  verifiedResolutionRequired: "verified_resolution_required",
+  incidentTraceMismatch: "incident_trace_mismatch",
+  incidentNotOpen: "incident_not_open",
+  dismissalReasonRequired: "dismissal_reason_required",
   runNotFound: "run_not_found",
   incidentNotFound: "incident_not_found",
   invalidStatusTransition: "invalid_status_transition",
@@ -129,6 +141,23 @@ export const api = {
     MOCK_MODE
       ? mockResolve(() => ({ ok: true as const, signozAuthed: true }))
       : request<{ ok: boolean; signozAuthed?: boolean }>("/api/health"),
+
+  capabilities: () =>
+    MOCK_MODE
+      ? mockResolve((): Capabilities => ({
+          schemaVersion: "1",
+          liveSideEffects: false,
+          runners: [
+            {
+              agentId: "research-agent",
+              revision: "fixture-runner@1",
+              available: true,
+              mutations: ["model_swap", "prompt_edit", "tool_output_override", "params"],
+              safeLiveTools: [],
+            },
+          ],
+        }))
+      : request<Capabilities>("/api/capabilities"),
 
   listRuns: (agentId?: string, limit?: number) => {
     if (MOCK_MODE) return mockResolve(mockRuns);

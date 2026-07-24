@@ -4,7 +4,16 @@
  * IncidentStore, all computation in pure modules.
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { ForkRequest, ForkResult, Incident, MockPolicy, Mutation } from "@hindsight/shared";
+import { timingSafeEqual } from "node:crypto";
+import type {
+  Capabilities,
+  ForkRequest,
+  ForkResult,
+  Incident,
+  MockPolicy,
+  Mutation,
+  RunGraph,
+} from "@hindsight/shared";
 import type { Config } from "./config.js";
 import { SignozClient, SignozError } from "./signoz/client.js";
 import { InvalidTransitionError, IncidentStore } from "./incidents/store.js";
@@ -13,15 +22,16 @@ import { compareRuns } from "./compare/diff.js";
 import { computeFleetStats } from "./fleet.js";
 import { generatePostmortem } from "./postmortem.js";
 import { handleSignozWebhook } from "./webhooks/signoz.js";
+import { ForkExecutionError } from "./fork/executor.js";
+import { IncompleteRecordError, replayRun } from "./replay/replay.js";
+import { verifyForkResolution } from "./incidents/verify.js";
+import type { EngineMetrics } from "./otel.js";
+import { ATTR } from "@hindsight/shared";
 
-/**
- * SEAM for the fork-executor follow-up: implement this interface (replay
- * steps 0..forkAtStep from the original RunGraph with the mutation applied,
- * record a new trace tagged hindsight.fork.of) and inject it at server
- * startup. Routes stay unchanged.
- */
+/** Runner-backed fork execution boundary injected by the server. */
 export interface ForkExecutor {
   execute(request: ForkRequest): Promise<ForkResult>;
+  capabilities(): Promise<Capabilities>;
 }
 
 export interface RouteDeps {
@@ -29,6 +39,7 @@ export interface RouteDeps {
   signoz: SignozClient;
   incidents: IncidentStore;
   forkExecutor?: ForkExecutor;
+  metrics?: EngineMetrics;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,6 +48,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, signoz, incidents } = deps;
 
   app.get("/api/health", async () => ({ ok: true, signozAuthed: signoz.authed }));
+  app.get("/api/capabilities", async () =>
+    deps.forkExecutor
+      ? deps.forkExecutor.capabilities()
+      : { schemaVersion: "1", liveSideEffects: false, runners: [] },
+  );
 
   app.get<{ Querystring: { agentId?: string; limit?: string } }>("/api/runs", async (req, reply) => {
     if (!requireSignoz(signoz, reply)) return;
@@ -59,8 +75,11 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const result = await withSignozErrors(reply, async () => {
       const spans = await signoz.getSpansForTrace(req.params.traceId);
       if (spans.length === 0) return null;
-      const logs = await signoz.getPayloadLogs(req.params.traceId);
-      return buildRunGraph(req.params.traceId, spans, logs);
+      const [logs, events] = await Promise.all([
+        signoz.getPayloadLogs(req.params.traceId),
+        signoz.getRunEvents(req.params.traceId),
+      ]);
+      return buildRunGraph(req.params.traceId, spans, logs, events);
     });
     if (result === undefined) return;
     if (result === null) return reply.code(404).send({ error: "run_not_found" });
@@ -93,19 +112,135 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return compareRuns(graphs.original, graphs.fork);
   });
 
+  app.post("/api/replays", async (req, reply) => {
+    const body = req.body as { traceId?: unknown } | null;
+    if (!body || typeof body.traceId !== "string" || body.traceId === "") {
+      return reply.code(400).send({ error: "invalid_body", detail: "traceId is required" });
+    }
+    if (!requireSignoz(signoz, reply)) return;
+    const graph = await withSignozErrors(reply, async () => {
+      const spans = await signoz.getSpansForTrace(body.traceId as string);
+      if (spans.length === 0) return null;
+      return buildRunGraph(
+        body.traceId as string,
+        spans,
+        await signoz.getPayloadLogs(body.traceId as string),
+      );
+    });
+    if (graph === undefined) return;
+    if (graph === null) return reply.code(404).send({ error: "run_not_found" });
+    try {
+      return replayRun(graph);
+    } catch (error) {
+      if (error instanceof IncompleteRecordError) {
+        return reply.code(409).send({
+          error: "incomplete_record",
+          detail: error.message,
+          checkpoint: graph.checkpoint,
+        });
+      }
+      throw error;
+    }
+  });
+
   app.post("/api/forks", async (req, reply) => {
     const parsed = validateForkRequest(req.body);
     if (!parsed.ok) {
       return reply.code(400).send({ error: "invalid_fork_request", detail: parsed.detail });
     }
-    // SEAM: the fork executor drops in via RouteDeps.forkExecutor. It will
-    // need SigNoz (requireSignoz) once implemented; for now the pending
-    // stub answers without touching the query API.
     if (!deps.forkExecutor) {
-      return reply.code(501).send({ error: "fork_executor_pending" });
+      return reply.code(503).send({ error: "runner_unavailable" });
     }
     if (!requireSignoz(signoz, reply)) return;
-    return deps.forkExecutor.execute(parsed.value);
+    const incident = parsed.value.incidentId
+      ? incidents.get(parsed.value.incidentId)
+      : undefined;
+    if (parsed.value.incidentId && !incident) {
+      return reply.code(404).send({ error: "incident_not_found" });
+    }
+    if (incident && incident.traceId !== parsed.value.traceId) {
+      return reply
+        .code(409)
+        .send({ error: "incident_trace_mismatch", detail: "incident is anchored to another trace" });
+    }
+    if (incident && incident.status !== "open") {
+      return reply.code(409).send({
+        error: "incident_not_open",
+        detail: `incident status is ${incident.status}`,
+      });
+    }
+    try {
+      const result = await deps.forkExecutor.execute(parsed.value);
+      deps.metrics?.forks.add(1, {
+        [ATTR.AGENT_ID]: incident?.agentId ?? "unknown",
+        [ATTR.OUTCOME]: result.outcome,
+      });
+      if (!incident) return result;
+      incidents.startVerification(incident.id, {
+        forkTraceId: result.forkTraceId,
+        mutation: result.mutation,
+        mutationHash: result.mutationHash,
+      }, {
+        createdAt: new Date().toISOString(),
+        outcome: result.outcome,
+        runnerRevision: result.runnerRevision,
+        idempotencyKey: result.idempotencyKey,
+        error: result.error,
+      });
+      let verification;
+      try {
+        const [original, fork] = await Promise.all([
+          loadGraph(signoz, incident.traceId),
+          waitForGraph(signoz, result.forkTraceId, config.verificationTimeoutMs),
+        ]);
+        if (!original || !fork) {
+          verification = {
+            verified: false as const,
+            checkedAt: new Date().toISOString(),
+            reason: "fork telemetry was not queryable before the verification timeout",
+            originalOutcome: original?.run.outcome,
+            forkOutcome: fork?.run.outcome,
+          };
+        } else {
+          const verifyingIncident = incidents.get(incident.id);
+          if (!verifyingIncident) throw new Error("incident disappeared during verification");
+          verification = verifyForkResolution({
+            incident: verifyingIncident,
+            original,
+            fork,
+            result,
+          });
+        }
+      } catch (error) {
+        verification = {
+          verified: false as const,
+          checkedAt: new Date().toISOString(),
+          reason: `verification query failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          originalOutcome: incident.verification?.originalOutcome,
+        };
+      }
+      const updated = incidents.finishVerification(incident.id, verification);
+      if (updated?.status === "resolved") {
+        deps.metrics?.resolved.add(1, { [ATTR.AGENT_ID]: updated.agentId });
+        if (updated.resolutionMs !== undefined) {
+          deps.metrics?.resolutionDuration.record(updated.resolutionMs, {
+            [ATTR.AGENT_ID]: updated.agentId,
+          });
+        }
+      }
+      return { ...result, verification, incident: updated };
+    } catch (error) {
+      if (error instanceof ForkExecutionError) {
+        deps.metrics?.forks.add(1, {
+          [ATTR.AGENT_ID]: incident?.agentId ?? "unknown",
+          [ATTR.OUTCOME]: "failure",
+        });
+        return reply.code(error.status).send({ error: error.code, detail: error.message });
+      }
+      throw error;
+    }
   });
 
   app.get("/api/incidents", async () => incidents.list());
@@ -126,8 +261,32 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (!req.body || typeof req.body !== "object") {
       return reply.code(400).send({ error: "invalid_body" });
     }
+    const patch = req.body as Partial<Incident>;
+    if (
+      patch.status !== undefined &&
+      patch.status !== "open" &&
+      patch.status !== "dismissed"
+    ) {
+      return reply.code(403).send({
+        error: "verified_resolution_required",
+        detail: "verifying and resolved states are controlled by fork verification",
+      });
+    }
+    if (patch.status === "dismissed" && !patch.notes?.trim()) {
+      return reply.code(400).send({
+        error: "dismissal_reason_required",
+        detail: "notes must explain why the incident is dismissed",
+      });
+    }
+    const allowedKeys = new Set(["status", "notes"]);
+    if (Object.keys(patch).some((key) => !allowedKeys.has(key))) {
+      return reply.code(400).send({
+        error: "invalid_body",
+        detail: "only status and notes may be changed manually",
+      });
+    }
     try {
-      const updated = incidents.update(req.params.id, req.body as Partial<Incident>);
+      const updated = incidents.update(req.params.id, patch);
       if (!updated) return reply.code(404).send({ error: "incident_not_found" });
       return updated;
     } catch (err) {
@@ -143,6 +302,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.post<{ Params: { id: string } }>("/api/incidents/:id/postmortem", async (req, reply) => {
     const incident = incidents.get(req.params.id);
     if (!incident) return reply.code(404).send({ error: "incident_not_found" });
+    if (incident.status !== "resolved" || !incident.verification?.verified) {
+      return reply.code(409).send({
+        error: "verified_resolution_required",
+        detail: "postmortems are generated after a fork is verified",
+      });
+    }
     // Best effort: a postmortem is still useful without live SigNoz data.
     let runGraph;
     let compare;
@@ -164,7 +329,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         req.log.warn({ err }, "postmortem: SigNoz fetch failed, generating partial markdown");
       }
     }
-    return { markdown: generatePostmortem({ incident, runGraph, compare, signozUrl: config.signozUrl }) };
+    return {
+      markdown: generatePostmortem({
+        incident,
+        runGraph,
+        compare: compare ?? incident.verification?.comparison,
+        signozUrl: config.signozUrl,
+      }),
+    };
   });
 
   app.get("/api/fleet", async (_req, reply) => {
@@ -182,13 +354,28 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 
   app.post("/hooks/signoz", async (req, reply) => {
+    if (!config.signozWebhookSecret) {
+      return reply.code(503).send({ error: "webhook_secret_missing" });
+    }
+    const authorization = req.headers.authorization;
+    if (
+      !authorization?.startsWith("Bearer ") ||
+      !sameSecret(authorization.slice("Bearer ".length), config.signozWebhookSecret)
+    ) {
+      return reply.code(401).send({ error: "webhook_unauthorized" });
+    }
     const outcome = handleSignozWebhook(req.body, incidents);
     if (!outcome.ok) {
       return reply
         .code(400)
         .send({ error: "unrecognized_alert_payload", received: req.body ?? null });
     }
-    return outcome.incidents.length === 1 ? outcome.incidents[0] : { incidents: outcome.incidents };
+    for (const incident of outcome.created) {
+      deps.metrics?.incidents.add(1, { [ATTR.AGENT_ID]: incident.agentId });
+    }
+    return outcome.incidents.length === 1 && outcome.ignored === 0
+      ? outcome.incidents[0]
+      : { incidents: outcome.incidents, ignored: outcome.ignored };
   });
 }
 
@@ -231,7 +418,7 @@ function clampInt(v: string | undefined, min: number, max: number, dflt: number)
 }
 
 const MUTATION_TYPES = ["model_swap", "prompt_edit", "tool_output_override", "params", "disable_tool"];
-const MOCK_POLICIES: MockPolicy[] = ["strict", "hybrid", "live"];
+const MOCK_POLICIES: MockPolicy[] = ["strict", "hybrid"];
 
 function validateForkRequest(
   body: unknown,
@@ -255,6 +442,8 @@ function validateForkRequest(
       forkAtStep: b.forkAtStep as number,
       mockPolicy: b.mockPolicy as MockPolicy,
       mutation: b.mutation as Mutation,
+      incidentId: typeof b.incidentId === "string" ? b.incidentId : undefined,
+      idempotencyKey: typeof b.idempotencyKey === "string" ? b.idempotencyKey : undefined,
     },
   };
 }
@@ -289,4 +478,37 @@ function validateMutation(m: unknown): string | null {
     default:
       return "unknown mutation type";
   }
+}
+
+async function loadGraph(signoz: SignozClient, traceId: string): Promise<RunGraph | null> {
+  const spans = await signoz.getSpansForTrace(traceId);
+  if (!spans.some((span) => span.attributes[ATTR.OUTCOME] !== undefined)) return null;
+  const [payloads, events] = await Promise.all([
+    signoz.getPayloadLogs(traceId),
+    signoz.getRunEvents(traceId),
+  ]);
+  return buildRunGraph(traceId, spans, payloads, events);
+}
+
+async function waitForGraph(
+  signoz: SignozClient,
+  traceId: string,
+  timeoutMs: number,
+): Promise<RunGraph | null> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const graph = await loadGraph(signoz, traceId);
+    if (graph) return graph;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  } while (Date.now() < deadline);
+  return null;
+}
+
+function sameSecret(actual: string, expected: string): boolean {
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    actualBytes.length === expectedBytes.length &&
+    timingSafeEqual(actualBytes, expectedBytes)
+  );
 }

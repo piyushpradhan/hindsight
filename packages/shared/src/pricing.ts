@@ -15,16 +15,24 @@ export const PRICE_TABLE: Record<string, ModelPrice> = {
   "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6 },
 };
 
-const FALLBACK: ModelPrice = { inputPer1M: 1.0, outputPer1M: 5.0 };
-
 /** Prefix match so dated model ids (e.g. "claude-haiku-4-5-20251001") resolve. */
-export function lookupPrice(model: string): ModelPrice {
-  if (PRICE_TABLE[model]) return PRICE_TABLE[model];
-  const key = Object.keys(PRICE_TABLE).find((k) => model.startsWith(k));
-  return key ? PRICE_TABLE[key] : FALLBACK;
+export function lookupPrice(
+  model: string,
+  priceTable: Record<string, ModelPrice> = PRICE_TABLE,
+): ModelPrice | undefined {
+  const table = priceTable === PRICE_TABLE ? PRICE_TABLE : { ...PRICE_TABLE, ...priceTable };
+  if (table[model]) return table[model];
+  const key = Object.keys(table).find((k) => model.startsWith(k));
+  return key ? table[key] : undefined;
 }
 
-export function computeCostUsd(model: string, inputTokens: number, outputTokens: number): number {
-  const p = lookupPrice(model);
+export function computeCostUsd(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  priceTable: Record<string, ModelPrice> = PRICE_TABLE,
+): number | undefined {
+  const p = lookupPrice(model, priceTable);
+  if (!p) return undefined;
   return (inputTokens * p.inputPer1M + outputTokens * p.outputPer1M) / 1_000_000;
 }

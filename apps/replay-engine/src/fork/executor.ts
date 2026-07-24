@@ -1,242 +1,397 @@
-/**
- * Fork executor — the product's identity. Reconstructs an original run from
- * SigNoz, rebuilds its conversation state up to `forkAtStep`, applies exactly
- * one Mutation, and re-executes live from there. Unchanged tool calls are
- * answered from the recording (the mock policy); the counterfactual is recorded
- * as a brand-new trace, tagged hindsight.fork.of and span-linked to the original.
- *
- * Re-use over re-implementation: the actual agent loop, deterministic mock
- * provider, and tool registry come from @hindsight/demo-agents — the fork just
- * feeds them a rebuilt message prefix + a plan derived from the original run.
- *
- * ponytail: the reconstructed plan is the original run's tool sequence; the mock
- * provider auto-emits a final answer once it's exhausted. Because chaos is not
- * re-injected, a fork of a failed run completes — the mutation is the fix under
- * test. Generalizing beyond the demo agents (arbitrary recorded agents) is the
- * upgrade path if this ever leaves the hackathon.
- */
-import { TraceFlags, type SpanContext } from "@opentelemetry/api";
+import { randomUUID } from "node:crypto";
 import {
-  ATTR,
-  type ChatMessage,
+  HINDSIGHT_SCHEMA_VERSION,
+  type Capabilities,
   type ForkRequest,
   type ForkResult,
-  type MockPolicy,
+  type ForkRunnerCapability,
   type Mutation,
+  type RunnerForkRequest,
+  type RunnerForkResponse,
 } from "@hindsight/shared";
-import { createRecorder, hashToolArgs, type Recorder } from "@hindsight/recorder";
+import { hashToolArgs } from "@hindsight/recorder";
+import type { RunnerConfig } from "../config.js";
 import {
-  AGENTS,
-  ALL_TOOLS,
-  createMockProvider,
-  isSafe,
-  runAgent,
-  type PlanStep,
-  type ToolRegistry,
-} from "@hindsight/demo-agents";
-import { buildRunGraph, type PayloadLogInput, type SpanInput } from "../rungraph/builder.js";
+  buildRunGraph,
+  type PayloadLogInput,
+  type SpanInput,
+} from "../rungraph/builder.js";
 import type { ForkExecutor } from "../routes.js";
 
-/** Just the slice of SignozClient the executor needs (keeps it unit-testable). */
 export interface SignozReader {
   getSpansForTrace(traceId: string): Promise<SpanInput[]>;
   getPayloadLogs(traceId: string): Promise<PayloadLogInput[]>;
 }
 
-export interface ForkExecutorOptions {
-  otlpHttpUrl: string;
-  /** Override the recorder (tests inject an in-memory one). */
-  recorderFactory?: () => Recorder;
+export type ForkExecutionErrorCode =
+  | "original_not_found"
+  | "incomplete_record"
+  | "runner_unavailable"
+  | "unsupported_mutation"
+  | "invalid_mutation_target"
+  | "runner_rejected"
+  | "runner_timeout"
+  | "runner_protocol_error"
+  | "idempotency_conflict";
+
+export class ForkExecutionError extends Error {
+  constructor(
+    readonly code: ForkExecutionErrorCode,
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ForkExecutionError";
+  }
 }
 
-export class DemoForkExecutor implements ForkExecutor {
+interface IdempotentExecution {
+  requestHash: string;
+  result: Promise<ForkResult>;
+}
+
+export class HttpForkExecutor implements ForkExecutor {
+  private readonly executions = new Map<string, IdempotentExecution>();
+
   constructor(
     private readonly signoz: SignozReader,
-    private readonly opts: ForkExecutorOptions,
+    private readonly options: {
+      runners: Record<string, RunnerConfig>;
+      timeoutMs: number;
+    },
   ) {}
 
-  async execute(request: ForkRequest): Promise<ForkResult> {
+  async capabilities(): Promise<Capabilities> {
+    const runners = await Promise.all(
+      Object.entries(this.options.runners).map(([agentId, runner]) =>
+        this.runnerCapability(agentId, runner),
+      ),
+    );
+    return {
+      schemaVersion: HINDSIGHT_SCHEMA_VERSION,
+      liveSideEffects: false,
+      runners,
+    };
+  }
+
+  execute(request: ForkRequest): Promise<ForkResult> {
+    const idempotencyKey = request.idempotencyKey?.trim() || randomUUID();
+    const requestHash = hashToolArgs({ ...request, idempotencyKey: undefined });
+    const existing = this.executions.get(idempotencyKey);
+    if (existing) {
+      if (existing.requestHash !== requestHash) {
+        throw new ForkExecutionError(
+          "idempotency_conflict",
+          "idempotency key was already used for a different fork",
+          409,
+        );
+      }
+      return existing.result;
+    }
+
+    const result = this.executeOnce({ ...request, idempotencyKey });
+    this.executions.set(idempotencyKey, { requestHash, result });
+    if (this.executions.size > 1_000) {
+      this.executions.delete(this.executions.keys().next().value as string);
+    }
+    return result;
+  }
+
+  private async executeOnce(request: ForkRequest & { idempotencyKey: string }): Promise<ForkResult> {
     const spans = await this.signoz.getSpansForTrace(request.traceId);
     if (spans.length === 0) {
-      return notFound(request.traceId);
-    }
-    const logs = await this.signoz.getPayloadLogs(request.traceId);
-    const graph = buildRunGraph(request.traceId, spans, logs);
-
-    const originalSpanContext = rootSpanContext(request.traceId, spans);
-    const recordings = recordingsByHash(graph.steps);
-    const override = overrideFor(request.mutation, graph.steps);
-
-    // Rebuild the conversation prefix for steps [0, forkAtStep).
-    const initialMessages: ChatMessage[] = [];
-    for (const s of graph.steps) {
-      if (s.index >= request.forkAtStep) break;
-      initialMessages.push(
-        s.kind === "llm"
-          ? { role: "assistant", content: textOf(s.response) }
-          : { role: "tool", content: { name: s.toolName ?? s.name, output: s.toolOutput } },
+      throw new ForkExecutionError(
+        "original_not_found",
+        `original trace ${request.traceId} was not found`,
+        404,
       );
     }
-
-    // Plan = the original run's tool sequence (mock provider finalizes after).
-    let plan: PlanStep[] = graph.steps
-      .filter((s) => s.kind === "tool")
-      .map((s) => ({ kind: "tool", name: s.toolName ?? s.name, args: asArgs(s.args) }));
-
-    // Defaults from the recorded run / known agent spec, then mutation on top.
-    const spec = AGENTS[graph.run.agentId];
-    let model = graph.steps.find((s) => s.kind === "llm")?.model ?? "claude-haiku-4-5";
-    let system = spec?.system;
-    let temperature: number | undefined;
-    let maxTokens: number | undefined;
-    let tools: ToolRegistry = ALL_TOOLS;
-
-    switch (request.mutation.type) {
-      case "model_swap":
-        model = request.mutation.model;
-        break;
-      case "prompt_edit":
-        system = request.mutation.newSystemPrompt;
-        break;
-      case "params":
-        temperature = request.mutation.temperature;
-        maxTokens = request.mutation.maxTokens;
-        break;
-      case "disable_tool": {
-        const disabled = request.mutation.toolName;
-        tools = { ...ALL_TOOLS };
-        delete tools[disabled];
-        plan = plan.filter((p) => p.kind !== "tool" || p.name !== disabled);
-        break;
-      }
-      case "tool_output_override":
-        // Applied through the resolver (`override`) — no re-drive changes here.
-        break;
+    const graph = buildRunGraph(
+      request.traceId,
+      spans,
+      await this.signoz.getPayloadLogs(request.traceId),
+    );
+    if (!graph.checkpoint?.complete || !graph.run.agentRevision || !graph.run.schemaVersion) {
+      throw new ForkExecutionError(
+        "incomplete_record",
+        graph.checkpoint?.issues.map((issue) => issue.detail).join("; ") ??
+          "checkpoint report is missing",
+        409,
+      );
     }
-
-    const resolver = makeResolver(request.mockPolicy, recordings, override);
-
-    const recorder = this.opts.recorderFactory
-      ? this.opts.recorderFactory()
-      : createRecorder({ otlpHttpUrl: this.opts.otlpHttpUrl, register: false });
-
-    try {
-      const result = await runAgent({
-        agentId: graph.run.agentId,
-        recorder,
-        provider: createMockProvider({ seed: 0 }),
-        tools,
-        system,
-        model,
-        temperature,
-        maxTokens,
-        task: spec?.task ?? "Re-run the agent.",
-        initialMessages: initialMessages.length ? initialMessages : undefined,
-        plan,
-        seed: 0,
-        toolResolver: resolver,
-        fork: {
-          of: request.traceId,
-          point: request.forkAtStep,
-          mutation: request.mutation,
-          originalSpanContext,
-        },
-      });
-      return {
-        forkRunId: result.runId,
-        forkTraceId: result.traceId,
+    const registration = this.options.runners[graph.run.agentId];
+    if (!registration) {
+      throw new ForkExecutionError(
+        "runner_unavailable",
+        `no runner is registered for ${graph.run.agentId}`,
+        503,
+      );
+    }
+    if (registration.revision !== graph.run.agentRevision) {
+      throw new ForkExecutionError(
+        "runner_unavailable",
+        `registered revision ${registration.revision} does not match recording ${graph.run.agentRevision}`,
+        409,
+      );
+    }
+    validateMutationTarget(request, graph.steps);
+    const capability = await this.runnerCapability(graph.run.agentId, registration);
+    if (!capability.available) {
+      throw new ForkExecutionError(
+        "runner_unavailable",
+        `runner for ${graph.run.agentId} is unavailable`,
+        503,
+      );
+    }
+    if (!capability.mutations.includes(request.mutation.type)) {
+      throw new ForkExecutionError(
+        "unsupported_mutation",
+        `runner does not support ${request.mutation.type}`,
+        422,
+      );
+    }
+    const root =
+      spans.find((span) => !span.parentSpanId) ??
+      spans.find((span) => span.attributes["hindsight.run.outcome"] !== undefined);
+    if (!root) {
+      throw new ForkExecutionError(
+        "incomplete_record",
+        "original root span is missing",
+        409,
+      );
+    }
+    const mutationHash = hashToolArgs(request.mutation);
+    const runnerRequest: RunnerForkRequest = {
+      idempotencyKey: request.idempotencyKey,
+      incidentId: request.incidentId,
+      mutation: request.mutation,
+      mutationHash,
+      mockPolicy: request.mockPolicy,
+      checkpoint: {
+        schemaVersion: graph.run.schemaVersion,
         originalTraceId: request.traceId,
-        outcome: result.outcome,
-        stepCount: result.steps,
-        error: result.error,
+        originalSpanId: root.spanId,
+        runId: graph.run.runId,
+        agentId: graph.run.agentId,
+        agentRevision: graph.run.agentRevision,
+        forkAtStep: request.forkAtStep,
+        steps: graph.steps,
+      },
+    };
+    const response = await this.callRunner(registration, runnerRequest);
+    if (
+      response.runnerRevision !== registration.revision ||
+      response.appliedMutationHash !== mutationHash
+    ) {
+      throw new ForkExecutionError(
+        "runner_protocol_error",
+        "runner did not confirm the requested revision and mutation",
+        502,
+      );
+    }
+    return {
+      forkRunId: response.forkRunId,
+      forkTraceId: response.forkTraceId,
+      originalTraceId: request.traceId,
+      outcome: response.outcome,
+      stepCount: response.stepCount,
+      mutation: request.mutation,
+      mutationHash,
+      runnerRevision: response.runnerRevision,
+      checkpoint: graph.checkpoint,
+      idempotencyKey: request.idempotencyKey,
+      error: response.error,
+    };
+  }
+
+  private async runnerCapability(
+    agentId: string,
+    registration: RunnerConfig,
+  ): Promise<ForkRunnerCapability> {
+    try {
+      const response = await fetch(`${registration.url}/hindsight/capabilities`, {
+        headers: runnerHeaders(registration),
+        signal: AbortSignal.timeout(Math.min(this.options.timeoutMs, 2_000)),
+      });
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      const body = (await response.json()) as { runners?: ForkRunnerCapability[] };
+      const capability = body.runners?.find((candidate) => candidate.agentId === agentId);
+      if (!capability || capability.revision !== registration.revision) {
+        throw new Error("agent or revision missing from capability response");
+      }
+      return { ...capability, available: true };
+    } catch {
+      return {
+        agentId,
+        revision: registration.revision,
+        available: false,
+        mutations: [],
+        safeLiveTools: [],
       };
-    } finally {
-      await recorder.shutdown();
     }
   }
-}
 
-/* -------------------------------- helpers --------------------------------- */
-
-function notFound(traceId: string): ForkResult {
-  return {
-    forkRunId: "",
-    forkTraceId: "",
-    originalTraceId: traceId,
-    outcome: "failure",
-    stepCount: 0,
-    error: "original run not found",
-  };
-}
-
-/** The root span's context, so the fork can OTel-link back to the original. */
-function rootSpanContext(traceId: string, spans: SpanInput[]): SpanContext | undefined {
-  const root =
-    spans.find((s) => s.attributes[ATTR.OUTCOME] !== undefined) ??
-    spans.find((s) => !s.parentSpanId) ??
-    spans[0];
-  if (!root) return undefined;
-  return { traceId, spanId: root.spanId, traceFlags: TraceFlags.SAMPLED, isRemote: true };
-}
-
-/** argsHash → recorded tool output (first occurrence wins). */
-function recordingsByHash(steps: ReturnType<typeof buildRunGraph>["steps"]): Map<string, unknown> {
-  const map = new Map<string, unknown>();
-  for (const s of steps) {
-    if (s.kind !== "tool") continue;
-    const h = s.argsHash ?? hashToolArgs(s.args);
-    if (!map.has(h)) map.set(h, s.toolOutput);
-  }
-  return map;
-}
-
-/** For a tool_output_override mutation: (argsHash of the target step → new output). */
-function overrideFor(
-  mutation: Mutation,
-  steps: ReturnType<typeof buildRunGraph>["steps"],
-): { hash: string; value: unknown } | undefined {
-  if (mutation.type !== "tool_output_override") return undefined;
-  const target = steps.find((s) => s.index === mutation.stepIndex && s.kind === "tool");
-  if (!target) return undefined;
-  return { hash: target.argsHash ?? hashToolArgs(target.args), value: mutation.output };
-}
-
-/**
- * The mock policy, as a toolResolver. Returning undefined falls through to the
- * live tool in the agent loop. A tool_output_override always wins.
- */
-function makeResolver(
-  policy: MockPolicy,
-  recordings: Map<string, unknown>,
-  override: { hash: string; value: unknown } | undefined,
-): (name: string, args: Record<string, unknown>) => unknown {
-  return (name, args) => {
-    const h = hashToolArgs(args);
-    if (override && h === override.hash) return override.value;
-    const safe = isSafe(ALL_TOOLS, name);
-    const dryRun = { dryRun: true, tool: name, args };
-    switch (policy) {
-      case "strict":
-        if (recordings.has(h)) return recordings.get(h);
-        throw new Error(`strict mock policy: no recording for tool "${name}"`);
-      case "live":
-        return safe ? undefined : dryRun; // everything live; side effects stubbed
-      case "hybrid":
-      default:
-        if (recordings.has(h)) return recordings.get(h);
-        return safe ? undefined : dryRun;
+  private async callRunner(
+    registration: RunnerConfig,
+    request: RunnerForkRequest,
+  ): Promise<RunnerForkResponse> {
+    let response: Response;
+    try {
+      response = await fetch(`${registration.url}/hindsight/forks`, {
+        method: "POST",
+        headers: {
+          ...runnerHeaders(registration),
+          "content-type": "application/json",
+          "idempotency-key": request.idempotencyKey,
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(this.options.timeoutMs),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new ForkExecutionError("runner_timeout", "runner request timed out", 504);
+      }
+      throw new ForkExecutionError(
+        "runner_unavailable",
+        `runner request failed: ${error instanceof Error ? error.message : String(error)}`,
+        503,
+      );
     }
-  };
-}
-
-function asArgs(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
-
-/** Pull assistant text off a recorded completion for the message prefix. */
-function textOf(response: unknown): string {
-  if (response && typeof response === "object" && typeof (response as { content?: unknown }).content === "string") {
-    return (response as { content: string }).content;
+    if (!response.ok) {
+      const body = (await response.text()).slice(0, 500);
+      throw new ForkExecutionError(
+        "runner_rejected",
+        `runner returned ${response.status}: ${body}`,
+        422,
+      );
+    }
+    const body = (await response.json()) as Partial<RunnerForkResponse>;
+    if (
+      typeof body.forkRunId !== "string" ||
+      !/^[0-9a-f]{32}$/i.test(body.forkTraceId ?? "") ||
+      (body.outcome !== "success" && body.outcome !== "failure" && body.outcome !== "timeout") ||
+      typeof body.stepCount !== "number" ||
+      typeof body.runnerRevision !== "string" ||
+      typeof body.appliedMutationHash !== "string"
+    ) {
+      throw new ForkExecutionError(
+        "runner_protocol_error",
+        "runner returned an invalid response",
+        502,
+      );
+    }
+    return body as RunnerForkResponse;
   }
-  return "";
+}
+
+function validateMutationTarget(
+  request: ForkRequest,
+  steps: RunnerForkRequest["checkpoint"]["steps"],
+): void {
+  const branch = steps.find((step) => step.index === request.forkAtStep);
+  if (!branch) {
+    throw new ForkExecutionError(
+      "invalid_mutation_target",
+      `fork step ${request.forkAtStep} does not exist`,
+      422,
+    );
+  }
+  const mutation = request.mutation;
+  switch (mutation.type) {
+    case "tool_output_override": {
+      const target = steps.find((step) => step.index === mutation.stepIndex);
+      if (!target || target.kind !== "tool" || mutation.stepIndex !== request.forkAtStep) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "tool override must target the tool step used as the fork point",
+          422,
+        );
+      }
+      if (hashToolArgs(target.toolOutput) === hashToolArgs(mutation.output)) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "tool override must change the recorded tool output",
+          422,
+        );
+      }
+      break;
+    }
+    case "model_swap": {
+      const current = nextLlm(steps, request.forkAtStep)?.model;
+      if (!current || current === mutation.model) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "model swap must change the next recorded model",
+          422,
+        );
+      }
+      break;
+    }
+    case "prompt_edit": {
+      const current = nextLlm(steps, request.forkAtStep)?.systemPrompt;
+      if (current === undefined || current === mutation.newSystemPrompt) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "prompt edit requires a different recorded system prompt",
+          422,
+        );
+      }
+      break;
+    }
+    case "params": {
+      if (
+        mutation.temperature !== undefined &&
+        (!Number.isFinite(mutation.temperature) ||
+          mutation.temperature < 0 ||
+          mutation.temperature > 2)
+      ) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "temperature must be between 0 and 2",
+          422,
+        );
+      }
+      if (
+        mutation.maxTokens !== undefined &&
+        (!Number.isInteger(mutation.maxTokens) || mutation.maxTokens <= 0)
+      ) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "maxTokens must be a positive integer",
+          422,
+        );
+      }
+      const current = nextLlm(steps, request.forkAtStep);
+      if (
+        !current ||
+        (mutation.temperature === undefined && mutation.maxTokens === undefined) ||
+        (mutation.temperature === undefined || mutation.temperature === current.temperature) &&
+          (mutation.maxTokens === undefined || mutation.maxTokens === current.maxTokens)
+      ) {
+        throw new ForkExecutionError(
+          "invalid_mutation_target",
+          "parameter mutation must change the next LLM request",
+          422,
+        );
+      }
+      break;
+    }
+    case "disable_tool":
+      throw new ForkExecutionError(
+        "unsupported_mutation",
+        "disable_tool is not supported in v1",
+        422,
+      );
+  }
+}
+
+function nextLlm(
+  steps: RunnerForkRequest["checkpoint"]["steps"],
+  forkAtStep: number,
+) {
+  return steps.find((step) => step.kind === "llm" && step.index >= forkAtStep);
+}
+
+function runnerHeaders(registration: RunnerConfig): Record<string, string> {
+  return registration.secret ? { authorization: `Bearer ${registration.secret}` } : {};
 }

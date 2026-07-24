@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T00:00:00Z",
+  "title": "Design System: Hindsight Studio",
+  "extensions": {
+    "colorMeta": {
+      "ember": { "role": "primary", "displayName": "Ember", "canonical": "#C1440E", "tonalRamp": ["#2E0F03", "#4E1A06", "#71260A", "#8F3009", "#C1440E", "#DA6B3B", "#EDA07C", "#F7E6DC"] },
+      "ember-deep": { "role": "primary", "displayName": "Ember Deep", "canonical": "#8F3009" },
+      "ember-wash": { "role": "primary", "displayName": "Ember Wash", "canonical": "#F7E6DC" },
+      "ok": { "role": "secondary", "displayName": "Forest Ok", "canonical": "#3E6B3A", "tonalRamp": ["#111E10", "#1D331B", "#2B4D28", "#3E6B3A", "#548E4F", "#79AC74", "#A9C79E", "#EDF2EA"] },
+      "paper": { "role": "neutral", "displayName": "Printout Paper", "canonical": "#F6F2EA", "tonalRamp": ["#211D18", "#3C352C", "#6E655A", "#9C9284", "#C7BEAF", "#E4DCCF", "#F6F2EA", "#FDFBF6"] },
+      "paper-raise": { "role": "neutral", "displayName": "Raised Paper", "canonical": "#FDFBF6" },
+      "ink": { "role": "neutral", "displayName": "Logbook Ink", "canonical": "#211D18" },
+      "muted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#6E655A" },
+      "faint": { "role": "neutral", "displayName": "Faint Ink", "canonical": "#736858" },
+      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "#E4DCCF" },
+      "char": { "role": "neutral", "displayName": "Data Slab", "canonical": "#201B16" },
+      "char-ink": { "role": "neutral", "displayName": "Slab Ink", "canonical": "#EDE6DA" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page titles (h1). Largest type; states, never shouts." },
+      "body": { "displayName": "Body", "purpose": "Prose and message text in Inter, measure capped ~76ch." },
+      "data": { "displayName": "Data", "purpose": "Monospaced metrics, ids, code, JSON payloads." },
+      "label": { "displayName": "Label", "purpose": "Uppercase tracked mono eyebrows and field labels." }
+    },
+    "shadows": [
+      { "name": "overlay-lift", "value": "0 18px 50px rgba(32,27,22,0.28)", "purpose": "Modal cards." },
+      { "name": "popover-drop", "value": "0 10px 30px rgba(32,27,22,0.16)", "purpose": "Row-action overflow menu." },
+      { "name": "toast-float", "value": "0 12px 40px rgba(32,27,22,0.32)", "purpose": "Undo toast on the dark slab." },
+      { "name": "ember-halo", "value": "0 0 0 4px var(--ember-wash)", "purpose": "State signal on failed/selected step dots — not decoration." }
+    ],
+    "motion": [
+      { "name": "state-ease", "value": "0.15s ease", "purpose": "Step dot select/hover transitions." },
+      { "name": "ember-pulse", "value": "emberPulse 2s ease-in-out infinite", "purpose": "Failed step halo; disabled under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Ember Button",
+      "kind": "button",
+      "refersTo": "button-ember",
+      "description": "The fork call-to-action; at most one per view.",
+      "html": "<button class=\"ds-btn-ember\">Fork to fix this step →</button>",
+      "css": ".ds-btn-ember { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: 0.03em; padding: 8px 14px; border-radius: 8px; background: #C1440E; color: #FFF7F0; border: 1px solid #C1440E; cursor: pointer; } .ds-btn-ember:hover { background: #8F3009; border-color: #8F3009; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Neutral default action.",
+      "html": "<button class=\"ds-btn-primary\">Open trace</button>",
+      "css": ".ds-btn-primary { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: 0.03em; padding: 8px 14px; border-radius: 8px; background: #211D18; color: #F6F2EA; border: 1px solid #211D18; cursor: pointer; } .ds-btn-primary:hover { background: #201B16; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action.",
+      "html": "<button class=\"ds-btn-ghost\">Close fork panel</button>",
+      "css": ".ds-btn-ghost { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: 0.03em; padding: 8px 14px; border-radius: 8px; background: transparent; color: #211D18; border: 1px solid #E4DCCF; cursor: pointer; } .ds-btn-ghost:hover { border-color: #211D18; }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Pill status/metric marker; ember and ok tone variants.",
+      "html": "<span class=\"ds-badge ds-badge-ember\">error</span>",
+      "css": ".ds-badge { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid #E4DCCF; background: #FDFBF6; color: #6E655A; } .ds-badge-ember { color: #8F3009; border-color: #EFCDBB; background: #F7E6DC; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text field with warm ember focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"filter by agent or trace id…\" />",
+      "css": ".ds-input { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; padding: 9px 12px; border: 1px solid #E4DCCF; border-radius: 8px; background: #FDFBF6; color: #211D18; } .ds-input:focus { outline: none; border-color: #C1440E; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Resting surface; flat with a hairline border.",
+      "html": "<div class=\"ds-card\">Run timeline</div>",
+      "css": ".ds-card { background: #FDFBF6; border: 1px solid #E4DCCF; border-radius: 10px; padding: 20px; color: #211D18; font-family: Inter, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Step Dot (LLM / Tool)",
+      "kind": "custom",
+      "refersTo": "step-scrubber",
+      "description": "Timeline dot; circle = LLM reasoning, rounded square = tool call. Failed pulses ember.",
+      "html": "<div class=\"ds-scrub\"><button class=\"ds-dot ds-dot-llm\">2</button><button class=\"ds-dot ds-dot-tool\">3</button><button class=\"ds-dot ds-dot-failed\">5</button></div>",
+      "css": ".ds-scrub { display: flex; gap: 40px; } .ds-dot { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #E4DCCF; background: #FDFBF6; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #6E655A; cursor: pointer; } .ds-dot-tool { border-radius: 9px; } .ds-dot-failed { border-color: #C1440E; color: #C1440E; box-shadow: 0 0 0 4px #F7E6DC; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Flight Recorder",
+    "overview": "Hindsight is a flight recorder for AI agents, and the studio dresses the part: a warm, analog instrument panel for reading a run's black box and branching a new one. The canvas is printout-tape cream, the structural voice is a monospaced instrument readout, and a single burnt-ember accent behaves like the one warning lamp on a console: rare, unambiguous, reserved for failure and the fork that answers it. Depth is mostly flat — hairline borders and tonal steps — with shadows and glows appearing only as a response to state.",
+    "keyCharacteristics": [
+      "Warm cream canvas, never cool gray or pure white.",
+      "One ember accent, spent almost entirely on failure and fork.",
+      "Monospace as instrumentation — labels, data, and structure, not costume.",
+      "Flat by default; depth is a response to state.",
+      "Geometry carries meaning (circle = reasoning, square = side-effect)."
+    ],
+    "rules": [
+      { "name": "The One Lamp Rule", "body": "Ember is the console's warning light. Spend it on failure and on the fork that fixes it, plus the wordmark and focus. If ember is decorating a healthy screen, remove it.", "section": "colors" },
+      { "name": "The Warm Neutral Rule", "body": "Every neutral carries warmth. Never introduce cool gray, blue-black, or a pure-white page background.", "section": "colors" },
+      { "name": "The Instrument Voice Rule", "body": "Monospace is for data, labels, measurement, and code — never as a decorative techy costume on prose.", "section": "typography" },
+      { "name": "The Flat-Until-Acted Rule", "body": "Surfaces are flat at rest. A shadow or halo is a claim that something changed.", "section": "elevation" },
+      { "name": "The Error-Tab Exception", "body": "A 3px ember border-left marks error surfaces — the one place a thick colored edge is allowed. New callouts use a full 1px border.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the canvas cream (#F6F2EA) and every neutral warm.",
+      "Do reserve ember for failure, the fork, focus, and the wordmark.",
+      "Do monospace data, labels, ids, and code; set prose in Inter.",
+      "Do stay flat at rest and let shadows/halos signal state changes only.",
+      "Do encode meaning in geometry where you can (circle vs. square step dots).",
+      "Do cap prose measure near 76ch and keep the smallest readable text ≥12px / AA contrast."
+    ],
+    "donts": [
+      "Don't introduce cool gray, blue-black, or a pure-white page background.",
+      "Don't put a second ember call-to-action on a screen, or ember-decorate a healthy state.",
+      "Don't use monospace as a decorative technical costume on prose.",
+      "Don't add a thick colored border-left anywhere except the established error surfaces.",
+      "Don't add resting shadows to cards or introduce a second chromatic accent beyond ember + success green."
+    ]
+  }
+}

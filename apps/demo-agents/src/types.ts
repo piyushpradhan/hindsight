@@ -33,6 +33,7 @@ export interface LlmRequest {
   temperature?: number;
   max_tokens?: number;
   system?: string;
+  tools?: Array<{ name: string; description: string }>;
 }
 
 /**

@@ -1,70 +1,90 @@
-/**
- * SigNoz alert webhook receiver. SigNoz (Alertmanager-style) POSTs variants of:
- *   { status, alerts: [ { labels, annotations, startsAt, ... } ], ... }
- * but test hooks / channel previews may send a single { labels, annotations }
- * or even a bare labels map. We tolerate all three.
- *
- * Field extraction heuristics (documented per spec):
- *   - alert name: labels.alertname, else annotations.title/summary
- *   - severity:   labels.severity
- *   - agent id:   any label/annotation key matching /agent/i
- *                 (covers hindsight.agent.id, agent_id, agentId, ...)
- *   - trace id:   first 32-char hex value found across labels, then
- *                 annotations, then the entire serialized payload
- * Anything we cannot make sense of -> 400 with the body echoed for debugging.
- */
+import { createHash } from "node:crypto";
 import type { Incident } from "@hindsight/shared";
 import type { IncidentStore } from "../incidents/store.js";
 
-const TRACE_ID_RE = /[0-9a-f]{32}/i;
+const TRACE_ID_RE = /^[0-9a-f]{32}$/i;
 
 interface AlertLike {
   labels: Record<string, string>;
   annotations: Record<string, string>;
+  fingerprint?: string;
+  status: string;
 }
 
 export type WebhookOutcome =
-  | { ok: true; incidents: Incident[] }
+  | { ok: true; incidents: Incident[]; created: Incident[]; ignored: number }
   | { ok: false };
 
-export function handleSignozWebhook(payload: unknown, store: IncidentStore): WebhookOutcome {
+export function handleSignozWebhook(
+  payload: unknown,
+  store: IncidentStore,
+): WebhookOutcome {
   const alerts = extractAlerts(payload);
-  if (!alerts || alerts.length === 0) return { ok: false };
+  if (!alerts?.length) return { ok: false };
   const incidents: Incident[] = [];
+  const created: Incident[] = [];
+  let ignored = 0;
   for (const alert of alerts) {
-    const traceId = findTraceId(alert, payload);
-    if (!traceId) return { ok: false }; // an alert without a run anchor is noise to us
-    incidents.push(
-      store.create({
+    if (alert.status === "resolved") {
+      // Alertmanager recovery does not prove an agent fork fixed the run.
+      ignored++;
+      continue;
+    }
+    const traceId = findTraceId(alert);
+    if (!traceId) {
+      // Fleet metric alerts are valid notifications, but cannot open a run incident.
+      ignored++;
+      continue;
+    }
+    const alertFingerprint = alert.fingerprint ?? fingerprint(alert, traceId);
+    const existed = store.getByAlert(alertFingerprint, traceId);
+    const incident = store.createOrGet({
         traceId,
+        runId: findRunId(alert),
+        source: "signoz",
         agentId: findAgentId(alert) ?? "unknown",
         alertName: findAlertName(alert),
         severity: alert.labels.severity,
-      }),
-    );
+        alertFingerprint,
+        failureCondition: findFailureCondition(alert),
+      });
+    incidents.push(incident);
+    if (!existed) created.push(incident);
   }
-  return { ok: true, incidents };
+  return { ok: true, incidents, created, ignored };
 }
 
 function extractAlerts(payload: unknown): AlertLike[] | null {
-  if (!payload || typeof payload !== "object") return null;
-  const p = payload as Record<string, unknown>;
-  if (Array.isArray(p.alerts)) {
-    const alerts = p.alerts
-      .map((a) => ({
-        labels: strMap((a as Record<string, unknown>)?.labels),
-        annotations: strMap((a as Record<string, unknown>)?.annotations),
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const root = payload as Record<string, unknown>;
+  const rootStatus = typeof root.status === "string" ? root.status : "firing";
+  if (Array.isArray(root.alerts)) {
+    const alerts = root.alerts
+      .filter((value): value is Record<string, unknown> => !!value && typeof value === "object")
+      .map((value) => ({
+        labels: strMap(value.labels),
+        annotations: strMap(value.annotations),
+        fingerprint: string(value.fingerprint),
+        status: string(value.status) ?? rootStatus,
       }))
-      .filter((a) => Object.keys(a.labels).length > 0 || Object.keys(a.annotations).length > 0);
-    return alerts.length > 0 ? alerts : null;
+      .filter(
+        (alert) =>
+          Object.keys(alert.labels).length > 0 ||
+          Object.keys(alert.annotations).length > 0,
+      );
+    return alerts.length ? alerts : null;
   }
-  const labels = strMap(p.labels);
-  const annotations = strMap(p.annotations);
-  if (Object.keys(labels).length > 0 || Object.keys(annotations).length > 0) {
-    return [{ labels, annotations }];
-  }
-  if (typeof p.alertname === "string") {
-    return [{ labels: strMap(payload) ?? {}, annotations: {} }];
+  const labels = strMap(root.labels);
+  const annotations = strMap(root.annotations);
+  if (Object.keys(labels).length || Object.keys(annotations).length) {
+    return [
+      {
+        labels,
+        annotations,
+        fingerprint: string(root.fingerprint),
+        status: rootStatus,
+      },
+    ];
   }
   return null;
 }
@@ -79,31 +99,78 @@ function findAlertName(alert: AlertLike): string {
 }
 
 function findAgentId(alert: AlertLike): string | undefined {
+  return (
+    alert.labels["hindsight.agent.id"] ??
+    alert.labels.agent_id ??
+    alert.labels.agentId ??
+    alert.annotations["hindsight.agent.id"]
+  );
+}
+
+function findTraceId(alert: AlertLike): string | undefined {
+  for (const key of [
+    "trace_id",
+    "traceId",
+    "traceID",
+    "hindsight.trace.id",
+  ]) {
+    const value = alert.labels[key] ?? alert.annotations[key];
+    if (value && TRACE_ID_RE.test(value)) return value.toLowerCase();
+  }
   for (const source of [alert.labels, alert.annotations]) {
-    for (const [key, value] of Object.entries(source)) {
-      if (/agent/i.test(key) && value) return value;
+    for (const value of Object.values(source)) {
+      const match = value.match(/[0-9a-f]{32}/i)?.[0];
+      if (match) return match.toLowerCase();
     }
   }
   return undefined;
 }
 
-function findTraceId(alert: AlertLike, wholePayload: unknown): string | undefined {
-  for (const source of [alert.labels, alert.annotations]) {
-    for (const value of Object.values(source)) {
-      const match = TRACE_ID_RE.exec(value);
-      if (match) return match[0].toLowerCase();
-    }
-  }
-  const match = TRACE_ID_RE.exec(JSON.stringify(wholePayload));
-  return match ? match[0].toLowerCase() : undefined;
+function findRunId(alert: AlertLike): string | undefined {
+  return (
+    alert.labels["hindsight.run.id"] ??
+    alert.labels.run_id ??
+    alert.annotations["hindsight.run.id"]
+  );
 }
 
-function strMap(v: unknown): Record<string, string> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof value === "string") out[key] = value;
-    else if (typeof value === "number" || typeof value === "boolean") out[key] = String(value);
+function findFailureCondition(alert: AlertLike): string {
+  return (
+    alert.labels["error.type"] ??
+    alert.labels.failure_condition ??
+    alert.labels.trigger ??
+    alert.annotations.failure_condition ??
+    alert.annotations.summary ??
+    findAlertName(alert)
+  );
+}
+
+function fingerprint(alert: AlertLike, traceId: string): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        traceId,
+        alertName: findAlertName(alert),
+        labels: sorted(alert.labels),
+      }),
+    )
+    .digest("hex");
+}
+
+function sorted(value: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function strMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === "string") result[key] = item;
+    else if (typeof item === "number" || typeof item === "boolean") result[key] = String(item);
   }
-  return out;
+  return result;
+}
+
+function string(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
 }

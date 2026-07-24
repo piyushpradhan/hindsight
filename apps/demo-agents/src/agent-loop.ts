@@ -14,7 +14,7 @@
  */
 import type { RunOutcome } from "@hindsight/shared";
 import type { ForkInfo, Recorder, Run } from "@hindsight/recorder";
-import type { ChatMessage, Completion, Provider, ToolRegistry } from "./types.js";
+import type { ChatMessage, Completion, Provider, ToolCall, ToolRegistry } from "./types.js";
 import type { PlanStep } from "./mock-provider.js";
 import {
   MalformedToolJsonError,
@@ -24,7 +24,9 @@ import {
 
 export interface RunAgentOptions {
   agentId: string;
+  agentRevision?: string;
   taskId?: string;
+  startStepIndex?: number;
   recorder: Recorder;
   provider: Provider;
   tools: ToolRegistry;
@@ -41,6 +43,8 @@ export interface RunAgentOptions {
   seed?: number;
   /** Safety cap on loop iterations. */
   maxTurns?: number;
+  /** Provider tool calls already chosen immediately before a tool-step fork. */
+  pendingToolCalls?: ToolCall[];
   /** Active chaos mode, if any. */
   chaos?: ChaosMode;
   /**
@@ -79,7 +83,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
   const run: Run = opts.recorder.startRun({
     agentId: opts.agentId,
+    agentRevision: opts.agentRevision,
     taskId: opts.taskId,
+    startStepIndex: opts.startStepIndex,
     fork: opts.fork,
   });
 
@@ -87,6 +93,19 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   let turns = 0;
 
   try {
+    for (const tc of opts.pendingToolCalls ?? []) {
+      const output = await run.tool(
+        tc.name,
+        tc.args,
+        () => executeTool(opts, tc.name, tc.args, run),
+        { toolCallId: tc.id },
+      );
+      messages.push({
+        role: "tool",
+        content: { toolCallId: tc.id, name: tc.name, output },
+      });
+    }
+
     while (turns < maxTurns) {
       turns++;
       const completion = await run.llm<Completion>(
@@ -97,6 +116,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
             temperature,
             max_tokens: maxTokens,
             system: opts.system,
+            tools: Object.values(opts.tools).map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+            })),
             // Mock-provider extras; ignored by other providers.
             ...(opts.plan ? { plan: opts.plan } : {}),
             ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
@@ -104,7 +127,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         { model, messages, temperature, max_tokens: maxTokens, system: opts.system, provider: opts.provider.name },
       );
 
-      messages.push({ role: "assistant", content: completion.content });
+      messages.push({
+        role: "assistant",
+        content: { text: completion.content, toolCalls: completion.toolCalls },
+      });
 
       if (completion.stopReason === "end" || completion.toolCalls.length === 0) {
         finalContent = completion.content;
@@ -112,8 +138,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       }
 
       for (const tc of completion.toolCalls) {
-        const output = await run.tool(tc.name, tc.args, () =>
-          executeTool(opts, tc.name, tc.args, run),
+        const output = await run.tool(
+          tc.name,
+          tc.args,
+          () => executeTool(opts, tc.name, tc.args, run),
+          { toolCallId: tc.id },
         );
         messages.push({
           role: "tool",
@@ -131,7 +160,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       traceId: run.traceId,
       outcome: "success",
       finalContent,
-      steps: turns,
+      steps: run.recordedStepCount(),
     };
   } catch (err) {
     const outcome: RunOutcome = err instanceof ToolTimeoutError ? "timeout" : "failure";
@@ -141,7 +170,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       traceId: run.traceId,
       outcome,
       finalContent,
-      steps: turns,
+      steps: run.recordedStepCount(),
       error: err instanceof Error ? err.message : String(err),
     };
   }

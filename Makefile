@@ -10,6 +10,8 @@
 SIGNOZ_URL       ?= http://localhost:8080
 STUDIO_URL       ?= http://localhost:5173
 REPLAY_ENGINE    ?= http://localhost:4123
+RUNNER_URL       ?= http://127.0.0.1:4124
+HINDSIGHT_RUNNERS ?= {"research":{"url":"$(RUNNER_URL)","revision":"demo-research@1"},"support-triage":{"url":"$(RUNNER_URL)","revision":"demo-support-triage@1"}}
 LOG_DIR          ?= .hindsight-logs
 
 # Cross-platform "open a URL" (macOS: open, Linux: xdg-open).
@@ -39,8 +41,10 @@ up: ## Install deps, build, and start replay-engine + studio in the background
 	pnpm install
 	pnpm build
 	@mkdir -p $(LOG_DIR)
+	@echo ">> Starting reference runner on $(RUNNER_URL) ..."
+	pnpm --filter @hindsight/demo-agents runner > $(LOG_DIR)/runner.log 2>&1 &
 	@echo ">> Starting replay-engine on $(REPLAY_ENGINE) ..."
-	pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
+	HINDSIGHT_RUNNERS='$(HINDSIGHT_RUNNERS)' pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
 	@echo ">> Starting studio on $(STUDIO_URL) ..."
 	pnpm --filter @hindsight/studio dev > $(LOG_DIR)/studio.log 2>&1 &
 	@echo ">> Logs in $(LOG_DIR)/ . Give the services a few seconds to bind."
@@ -48,12 +52,13 @@ up: ## Install deps, build, and start replay-engine + studio in the background
 dev: ## Run the whole workspace in watch mode (foreground, all packages)
 	pnpm dev
 
-seed: ## Seed demo agents / runs / an incident so the fork demo has data
+seed: ## Record demo runs; installed SigNoz rules may open incidents from failures
 	pnpm --filter @hindsight/demo-agents seed
 
 down: ## Stop the Hindsight app processes started by `up` (leaves SigNoz alone)
 	@echo ">> Stopping replay-engine and studio (SigNoz under pours/deployment is untouched)."
 	-@pkill -f "@hindsight/replay-engine" 2>/dev/null || true
+	-@pkill -f "@hindsight/demo-agents runner" 2>/dev/null || true
 	-@pkill -f "@hindsight/studio" 2>/dev/null || true
 	-@pkill -f "vite" 2>/dev/null || true
 	@echo ">> Done."

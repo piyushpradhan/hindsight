@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   ATTR,
   GENAI_ATTR,
+  HINDSIGHT_SCHEMA_VERSION,
   METRIC,
   PAYLOAD_LOG_MARKER,
   computeCostUsd,
@@ -22,7 +23,11 @@ function mockCompletion(input: number, output: number) {
 test("llm step: span attributes, cost, and payload log with marker", async () => {
   const mem = createInMemoryOtel();
   const rec = recorderFromOtel(mem.handles, "always");
-  const run = rec.startRun({ agentId: "research", taskId: "t-1" });
+  const run = rec.startRun({
+    agentId: "research",
+    agentRevision: "research@abc123",
+    taskId: "t-1",
+  });
 
   const params = {
     model: "claude-haiku-4-5",
@@ -45,6 +50,11 @@ test("llm step: span attributes, cost, and payload log with marker", async () =>
   assert.equal(root!.attributes[ATTR.AGENT_ID], "research");
   assert.equal(root!.attributes[ATTR.TASK_ID], "t-1");
   assert.equal(root!.attributes[ATTR.OUTCOME], "success");
+  assert.equal(root!.attributes[ATTR.SCHEMA_VERSION], HINDSIGHT_SCHEMA_VERSION);
+  assert.equal(root!.attributes[ATTR.AGENT_REVISION], "research@abc123");
+  assert.equal(root!.attributes[ATTR.RUN_STEP_COUNT], 1);
+  assert.equal(root!.attributes[ATTR.RUN_TOKENS_TOTAL], 120);
+  assert.equal(root!.attributes[ATTR.PAYLOAD_COMPLETE], true);
   assert.equal(typeof root!.attributes[ATTR.RUN_ID], "string");
 
   // Child is parented on the root.
@@ -67,14 +77,18 @@ test("llm step: span attributes, cost, and payload log with marker", async () =>
   assert.equal(typeof payloadRef, "string");
 
   // Payload log record.
-  const records = mem.logsExporter.getFinishedLogRecords();
+  const records = mem.logsExporter
+    .getFinishedLogRecords()
+    .filter((record) => JSON.parse(String(record.body)).marker === PAYLOAD_LOG_MARKER);
   assert.equal(records.length, 1);
   const body = JSON.parse(String(records[0].body));
   assert.equal(body.marker, PAYLOAD_LOG_MARKER);
   assert.equal(body.payloadRef, payloadRef);
   assert.equal(body.stepIndex, 0);
   assert.equal(body.kind, "llm");
-  assert.deepEqual(body.request, params.messages);
+  assert.deepEqual(body.request.messages, params.messages);
+  assert.equal(body.request.model, params.model);
+  assert.equal(body.request.provider, params.provider);
   assert.equal(body.response.usage.input_tokens, 100);
   // Log inherits the step span's trace/span ids.
   assert.equal(records[0].spanContext?.traceId, run.traceId);
@@ -153,7 +167,9 @@ test("onError policy only records failed steps", async () => {
   run.end({ outcome: "failure" });
   await mem.handles.shutdown();
 
-  const records = mem.logsExporter.getFinishedLogRecords();
+  const records = mem.logsExporter
+    .getFinishedLogRecords()
+    .filter((record) => JSON.parse(String(record.body)).marker === PAYLOAD_LOG_MARKER);
   assert.equal(records.length, 1);
   const body = JSON.parse(String(records[0].body));
   assert.equal(body.kind, "tool");
@@ -183,7 +199,66 @@ test("metrics: runs, tokens, cost, and tool errors are emitted", async () => {
   assert.ok(metricNames.has(METRIC.COST_USD_TOTAL));
   assert.ok(metricNames.has(METRIC.STEP_DURATION));
   assert.ok(metricNames.has(METRIC.TOOL_ERRORS_TOTAL));
+  const points = collectMetricPoints(mem);
+  assert.ok(
+    points.some(
+      (point) =>
+        point.name === METRIC.RUNS_TOTAL &&
+        point.attributes[ATTR.AGENT_ID] === "research" &&
+        point.attributes[ATTR.OUTCOME] === "failure",
+    ),
+  );
+  assert.ok(
+    points.some(
+      (point) =>
+        point.name === METRIC.TOOL_ERRORS_TOTAL &&
+        point.attributes[ATTR.TOOL_NAME] === "web_search",
+    ),
+  );
   await mem.handles.shutdown();
+});
+
+test("unknown pricing stays unknown and a supplied price table is honored", async () => {
+  const unknown = createInMemoryOtel();
+  const unknownRecorder = recorderFromOtel(unknown.handles, "always", {
+    payloadMode: "full",
+  });
+  const unknownRun = unknownRecorder.startRun({
+    agentId: "research",
+    agentRevision: "research@1",
+  });
+  await unknownRun.llm(async () => mockCompletion(1_000, 500), {
+    model: "unknown-model",
+    messages: [],
+  });
+  unknownRun.end({ outcome: "success" });
+  await unknown.handles.shutdown();
+  const unknownSpans = unknown.spans.getFinishedSpans();
+  const unknownRoot = unknownSpans.find((span) => span.attributes[ATTR.OUTCOME] !== undefined);
+  const unknownStep = unknownSpans.find((span) => span.attributes[ATTR.STEP_KIND] === "llm");
+  assert.equal(unknownRoot?.attributes[ATTR.RUN_COST_USD], undefined);
+  assert.equal(unknownStep?.attributes[ATTR.COST_USD], undefined);
+  assert.equal(unknownStep?.attributes[ATTR.PRICE_SOURCE], "unknown");
+
+  const custom = createInMemoryOtel();
+  const customRecorder = recorderFromOtel(custom.handles, "always", {
+    payloadMode: "full",
+    priceTable: { "custom-model": { inputPer1M: 2, outputPer1M: 4 } },
+  });
+  const customRun = customRecorder.startRun({
+    agentId: "research",
+    agentRevision: "research@1",
+  });
+  await customRun.llm(async () => mockCompletion(1_000, 500), {
+    model: "custom-model",
+    messages: [],
+  });
+  customRun.end({ outcome: "success" });
+  await custom.handles.shutdown();
+  const customRoot = custom.spans
+    .getFinishedSpans()
+    .find((span) => span.attributes[ATTR.OUTCOME] !== undefined);
+  assert.equal(customRoot?.attributes[ATTR.RUN_COST_USD], 0.004);
 });
 
 function collectMetricNames(mem: ReturnType<typeof createInMemoryOtel>): Set<string> {
@@ -194,4 +269,18 @@ function collectMetricNames(mem: ReturnType<typeof createInMemoryOtel>): Set<str
     }
   }
   return names;
+}
+
+function collectMetricPoints(mem: ReturnType<typeof createInMemoryOtel>) {
+  const points: Array<{ name: string; attributes: Record<string, unknown> }> = [];
+  for (const rm of mem.metricsExporter.getMetrics()) {
+    for (const sm of rm.scopeMetrics) {
+      for (const metric of sm.metrics) {
+        for (const point of metric.dataPoints) {
+          points.push({ name: metric.descriptor.name, attributes: point.attributes });
+        }
+      }
+    }
+  }
+  return points;
 }

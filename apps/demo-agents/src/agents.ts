@@ -12,6 +12,7 @@ import type { Provider, ToolRegistry } from "./types.js";
 
 export interface AgentSpec {
   agentId: string;
+  revision: string;
   system: string;
   tools: ToolRegistry;
   task: string;
@@ -22,6 +23,7 @@ export interface AgentSpec {
 /** Research agent: web_search + calculator, three tool steps then an answer. */
 export const RESEARCH_AGENT: AgentSpec = {
   agentId: "research",
+  revision: "demo-research@1",
   system: "You are a research assistant. Use web_search and calculator, then answer.",
   tools: RESEARCH_TOOLS,
   task: "How many GWh does a 4.2 MW turbine produce in a 30-day month at 40% capacity?",
@@ -35,6 +37,7 @@ export const RESEARCH_AGENT: AgentSpec = {
 /** Support-triage agent: ticket_lookup, then a resolution. */
 export const SUPPORT_AGENT: AgentSpec = {
   agentId: "support-triage",
+  revision: "demo-support-triage@1",
   system: "You are a support triage agent. Look up the ticket, then triage it.",
   tools: SUPPORT_TOOLS,
   task: "Triage ticket T-1001 and recommend next action.",
@@ -70,6 +73,7 @@ export function runAgentSpec(spec: AgentSpec, opts: RunSpecOptions): Promise<Age
   const plan = chaosPlan(spec, opts.chaos);
   return runAgent({
     agentId: spec.agentId,
+    agentRevision: spec.revision,
     taskId: opts.taskId,
     recorder: opts.recorder,
     provider,

@@ -4,6 +4,7 @@ import {
   shouldRecordPayload,
   runIsSampled,
   SAMPLE_EVERY,
+  protectPayload,
 } from "./payload-policy.js";
 
 test("always records every step", () => {
@@ -29,4 +30,30 @@ test("runIsSampled fires roughly 1 in SAMPLE_EVERY runs", () => {
   assert.equal(hits, 4);
   assert.equal(runIsSampled(0), true);
   assert.equal(runIsSampled(1), false);
+});
+
+test("never records no steps", () => {
+  assert.equal(shouldRecordPayload({ policy: "never", errored: true, runSampled: true }), false);
+});
+
+test("redacted payloads remove common secrets and are marked incomplete", () => {
+  const payload = protectPayload(
+    { headers: { authorization: "Bearer canary" }, value: "safe" },
+    { mode: "redacted" },
+  );
+  assert.equal(
+    (payload.body?.headers as Record<string, unknown>).authorization,
+    "[REDACTED]",
+  );
+  assert.equal(JSON.stringify(payload.body).includes("canary"), false);
+  assert.equal(payload.redacted, true);
+  assert.equal(payload.complete, false);
+});
+
+test("oversize payloads retain a hash but no partial body", () => {
+  const payload = protectPayload({ value: "too large" }, { mode: "full", maxBytes: 4 });
+  assert.equal(payload.body, undefined);
+  assert.equal(payload.truncated, true);
+  assert.equal(payload.complete, false);
+  assert.equal(payload.hash.length, 64);
 });

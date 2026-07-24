@@ -19,8 +19,14 @@
  *      type: "tag" — see filterItem().
  *   4. Log body may surface as "body" or nested; see readLogBody().
  */
-import { ATTR, GENAI_ATTR, PAYLOAD_LOG_MARKER } from "@hindsight/shared";
-import { parsePayloadLogBody } from "../payload-shape.js";
+import {
+  ATTR,
+  EVENT_LOG_MARKER,
+  GENAI_ATTR,
+  PAYLOAD_LOG_MARKER,
+  type RunEvent,
+} from "@hindsight/shared";
+import { parseEventLogBody, parsePayloadLogBody } from "../payload-shape.js";
 import type { PayloadLogInput, SpanInput } from "../rungraph/builder.js";
 
 /* ------------------------- version-specific knobs ------------------------- */
@@ -45,18 +51,36 @@ type DataType = "string" | "float64" | "bool";
 
 /** SigNoz stores all numeric attributes as float64. */
 const ATTR_DATA_TYPE: Record<string, DataType> = {
+  [ATTR.SCHEMA_VERSION]: "string",
+  [ATTR.RECORDER_VERSION]: "string",
   [ATTR.RUN_ID]: "string",
   [ATTR.AGENT_ID]: "string",
+  [ATTR.AGENT_REVISION]: "string",
   [ATTR.TASK_ID]: "string",
+  [ATTR.RUN_STEP_COUNT]: "float64",
+  [ATTR.RUN_TOKENS_TOTAL]: "float64",
+  [ATTR.RUN_COST_USD]: "float64",
+  [ATTR.RUN_DURATION_MS]: "float64",
   [ATTR.STEP_INDEX]: "float64",
   [ATTR.STEP_KIND]: "string",
+  [ATTR.TOOL_NAME]: "string",
+  [ATTR.TOOL_CALL_ID]: "string",
+  [ATTR.EVENT_NAME]: "string",
   [ATTR.PAYLOAD_REF]: "string",
+  [ATTR.PAYLOAD_COMPLETE]: "bool",
+  [ATTR.PAYLOAD_CAPTURE_POLICY]: "string",
   [ATTR.ARGS_HASH]: "string",
   [ATTR.COST_USD]: "float64",
+  [ATTR.PRICE_SOURCE]: "string",
+  [ATTR.PRICE_VERSION]: "string",
   [ATTR.OUTCOME]: "string",
   [ATTR.FORK_OF]: "string",
   [ATTR.FORK_POINT]: "float64",
   [ATTR.FORK_MUTATION]: "string",
+  [ATTR.FORK_MUTATION_HASH]: "string",
+  [ATTR.INCIDENT_ID]: "string",
+  [GENAI_ATTR.OPERATION_NAME]: "string",
+  [GENAI_ATTR.PROVIDER_NAME]: "string",
   [GENAI_ATTR.SYSTEM]: "string",
   [GENAI_ATTR.REQUEST_MODEL]: "string",
   [GENAI_ATTR.RESPONSE_MODEL]: "string",
@@ -152,11 +176,11 @@ export class SignozClient {
     }
   }
 
-  /** Spans that carry hindsight.run.id, newest first (raw material for run lists). */
+  /** Root run spans, newest first (raw material for run lists). */
   async listRunSpans(options: ListRunsOptions = {}): Promise<SpanInput[]> {
     const limit = clampInt(options.limit, 1, MAX_PAGE, 200);
     const sinceMs = options.sinceMs ?? Date.now() - 7 * DAY_MS;
-    const items: FilterItem[] = [existsFilter(ATTR.RUN_ID)];
+    const items: FilterItem[] = [existsFilter(ATTR.OUTCOME)];
     if (options.agentId) items.push(eqFilter(ATTR.AGENT_ID, options.agentId));
     const list = await this.runListQuery({
       dataSource: "traces",
@@ -210,6 +234,26 @@ export class SignozClient {
       });
     }
     return out;
+  }
+
+  async getRunEvents(traceId: string): Promise<RunEvent[]> {
+    const list = await this.runListQuery({
+      dataSource: "logs",
+      filters: [
+        builtinEqFilter(COL.logs.traceId, traceId),
+        containsFilter(COL.logs.body, EVENT_LOG_MARKER),
+      ],
+      selectColumns: [
+        { key: COL.logs.traceId, dataType: "string", type: "tag" },
+        { key: COL.logs.body, dataType: "string", type: "tag" },
+      ],
+      limit: MAX_PAGE,
+      sinceMs: Date.now() - 30 * DAY_MS,
+    });
+    return list.flatMap((item) => {
+      const event = parseEventLogBody(readLogBody(item));
+      return event ? [{ ...event, timestamp: toIso(item.timestamp) }] : [];
+    });
   }
 
   /* ------------------------------ internals ------------------------------ */

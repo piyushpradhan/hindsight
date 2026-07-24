@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import type { CompareResult, RunGraph, RunStep } from "@hindsight/shared";
+import { useLocation, useSearchParams } from "react-router-dom";
+import type {
+  CompareResult,
+  IncidentVerification,
+  RunGraph,
+  RunStep,
+} from "@hindsight/shared";
 import { api, signozTraceUrl } from "../api";
 import { fmtMs, fmtTokens, fmtUsd, shortId } from "../format";
 import { OutcomeBadge } from "../components/Badge";
@@ -12,7 +17,15 @@ function byIndex(steps: RunStep[]): Map<number, RunStep> {
   return new Map(steps.map((s) => [s.index, s]));
 }
 
-function DeltaStat({ label, value, suffix }: { label: string; value: number; suffix: "usd" | "tok" | "steps" | "ms" }) {
+function DeltaStat({ label, value, suffix }: { label: string; value: number | null; suffix: "usd" | "tok" | "steps" | "ms" }) {
+  if (value === null) {
+    return (
+      <div className="delta-stat">
+        <div className="d-label">{label}</div>
+        <div className="d-value zero">unknown</div>
+      </div>
+    );
+  }
   const cls = value < 0 ? "ok" : value > 0 ? "bad" : "zero";
   const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   const abs = Math.abs(value);
@@ -34,6 +47,10 @@ function DeltaStat({ label, value, suffix }: { label: string; value: number; suf
 
 export function CompareScreen() {
   const [params] = useSearchParams();
+  const location = useLocation();
+  const verification = (
+    location.state as { verification?: IncidentVerification } | null
+  )?.verification;
   const original = params.get("original") ?? "";
   const fork = params.get("fork") ?? "";
   const [compare, setCompare] = useState<CompareResult | null>(null);
@@ -86,11 +103,24 @@ export function CompareScreen() {
     : `Outcome unchanged: ${compare.fork.outcome}`;
 
   return (
-    <div className="page">
+    <div className="page compare-page">
       <div className="page-head">
-        <div className="eyebrow">Counterfactual</div>
-        <h1>Compare</h1>
+        <div className="eyebrow">Counterfactual comparison</div>
+        <h1>Compare outcomes</h1>
       </div>
+
+      {verification && (
+        <div className={verification.verified ? "fork-context" : "error-note"}>
+          <div className={verification.verified ? "" : "error-title"}>
+            {verification.verified
+              ? "Incident resolution verified"
+              : "Fork completed, but incident resolution was not verified"}
+          </div>
+          <div className={verification.verified ? "policy-hint" : "error-hint"}>
+            {verification.reason}
+          </div>
+        </div>
+      )}
 
       <div className="card verdict-card">
         <div>

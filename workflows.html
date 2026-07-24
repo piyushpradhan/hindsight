@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hindsight — Workflows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F6F2EA;--paper-raise:#FDFBF6;--ink:#211D18;--muted:#6E655A;--faint:#9C9284;
+    --line:#E4DCCF;--ember:#C1440E;--ember-deep:#8F3009;--ember-wash:#F7E6DC;
+    --char:#201B16;--char-ink:#EDE6DA;--ok:#3E6B3A;
+    --mono:"Berkeley Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto;padding:0 28px}
+
+  nav{position:sticky;top:0;z-index:50;background:rgba(246,242,234,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:20px;height:52px;overflow-x:auto}
+  nav .mark{font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.08em;color:var(--ember);white-space:nowrap}
+  nav a{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--muted);text-decoration:none;white-space:nowrap}
+  nav a:hover{color:var(--ember)}
+
+  header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ember);margin-bottom:18px}
+  h1{font-family:var(--mono);font-size:clamp(32px,6vw,50px);font-weight:600;letter-spacing:-.01em;line-height:1.05}
+  .tagline{font-size:20px;color:var(--muted);max-width:640px;margin-top:16px}
+  .tagline strong{color:var(--ink);font-weight:600}
+
+  section{padding:48px 0;border-bottom:1px solid var(--line)}
+  .sec-label{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ember);margin-bottom:10px}
+  h2{font-size:26px;font-weight:700;letter-spacing:-.015em;margin-bottom:8px}
+  .who{font-family:var(--mono);font-size:12px;color:var(--faint);margin-bottom:16px}
+  h3{font-size:17px;font-weight:600;margin:26px 0 8px}
+  p{margin-bottom:14px;max-width:74ch}
+  p.lead{font-size:18px;color:var(--ink)}
+  .note{background:var(--ember-wash);border-left:3px solid var(--ember);padding:14px 18px;border-radius:0 8px 8px 0;margin:18px 0;font-size:15px}
+  .note b{color:var(--ember-deep)}
+  ol,ul{margin:0 0 16px 22px;max-width:74ch}
+  li{margin-bottom:8px}
+  li::marker{color:var(--ember)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--paper-raise);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  pre{background:var(--char);color:var(--char-ink);border-radius:10px;padding:18px 20px;overflow-x:auto;margin:16px 0;font-family:var(--mono);font-size:13px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:inherit;font-size:inherit}
+  .cm{color:#8B7F6E}.kw{color:#E88B5F}.st{color:#C9B98A}
+
+  .steps{list-style:none;margin:16px 0;padding:0;max-width:none;counter-reset:s}
+  .steps li{position:relative;padding:10px 0 10px 44px;border-bottom:1px dashed var(--line);counter-increment:s;font-size:15px;margin:0}
+  .steps li:last-child{border-bottom:none}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:9px;width:26px;height:26px;border-radius:50%;background:var(--ember-wash);border:1px solid var(--ember);color:var(--ember-deep);font-family:var(--mono);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+  .steps li::marker{content:none}
+  .steps b{color:var(--ink)}
+
+  .verdict-card{display:flex;gap:0;margin:18px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;font-family:var(--mono)}
+  .vc-col{flex:1;padding:16px 18px}
+  .vc-col+.vc-col{border-left:1px solid var(--line)}
+  .vc-col.fail{background:var(--ember-wash)}
+  .vc-col.pass{background:#EAF1E7}
+  .vc-tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .vc-col.fail .vc-tag{color:var(--ember-deep)}
+  .vc-col.pass .vc-tag{color:var(--ok)}
+  .vc-big{font-size:22px;font-weight:600}
+  .vc-col.fail .vc-big{color:var(--ember-deep)}
+  .vc-col.pass .vc-big{color:var(--ok)}
+  .vc-sub{font-size:12.5px;color:var(--muted);margin-top:4px}
+
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:2px solid var(--ink)}
+  td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  td:first-child{font-weight:600;font-family:var(--mono);font-size:13px;white-space:nowrap}
+  tr:hover td{background:var(--paper-raise)}
+
+  .toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:28px}
+  .toc a{display:block;text-decoration:none;background:var(--paper-raise);border:1px solid var(--line);border-radius:10px;padding:16px 18px;color:var(--ink)}
+  .toc a:hover{border-color:var(--ember)}
+  .toc .n{font-family:var(--mono);font-size:11px;color:var(--ember);letter-spacing:.06em}
+  .toc .t{font-weight:600;margin-top:4px}
+  .toc .d{font-size:13px;color:var(--muted);margin-top:2px}
+
+  footer{padding:40px 0 60px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <span class="mark">HINDSIGHT · WORKFLOWS</span>
+  <a href="#record">Record</a>
+  <a href="#replay">Replay</a>
+  <a href="#fork">Fork</a>
+  <a href="#incident">Incident loop</a>
+  <a href="#diagnose">Diagnose</a>
+  <a href="#compare">Compare</a>
+  <a href="#postmortem">Postmortem</a>
+  <a href="#fleet">Fleet</a>
+</div></nav>
+
+<header><div class="wrap">
+  <div class="eyebrow">Agents of SigNoz · AI &amp; Agent Observability · Workflows v1</div>
+  <h1>Workflows</h1>
+  <p class="tagline"><strong>Every way you use Hindsight.</strong> Three verbs — Record, Replay, Fork — wrapped by an incident loop that turns a SigNoz alert into a proven fix. Each workflow below is standalone and demoable.</p>
+  <div class="toc">
+    <a href="#record"><div class="n">WF 01</div><div class="t">Record a run</div><div class="d">Instrument an agent in ~4 lines; every step becomes a trace.</div></a>
+    <a href="#replay"><div class="n">WF 02</div><div class="t">Replay a run</div><div class="d">Scrub any past run step-by-step. Zero LLM cost.</div></a>
+    <a href="#fork"><div class="n">WF 03</div><div class="t">Fork a run</div><div class="d">Change one variable, re-execute from that step.</div></a>
+    <a href="#incident"><div class="n">WF 04</div><div class="t">Incident loop</div><div class="d">Alert → webhook → incident inbox, no human.</div></a>
+    <a href="#diagnose"><div class="n">WF 05</div><div class="t">Diagnose (MCP)</div><div class="d">LLM queries SigNoz MCP to propose the mutation.</div></a>
+    <a href="#compare"><div class="n">WF 06</div><div class="t">Compare &amp; verify</div><div class="d">Side-by-side diff of original vs counterfactual.</div></a>
+    <a href="#postmortem"><div class="n">WF 07</div><div class="t">Postmortem</div><div class="d">One click → markdown with SigNoz deep links.</div></a>
+    <a href="#fleet"><div class="n">WF 08</div><div class="t">Fleet monitoring</div><div class="d">Dashboards + alerts for reliability, cost, MTTR.</div></a>
+  </div>
+</div></header>
+
+<section id="record"><div class="wrap">
+  <div class="sec-label">WF 01</div>
+  <h2>Record a run</h2>
+  <div class="who">Actor: agent developer · Precondition: SigNoz reachable via OTLP · Output: a replayable trace</div>
+  <p class="lead">Wrap the agent's LLM and tool calls. Every step becomes an OTel span (GenAI semconv); full payloads land as trace-correlated log records. Nothing else to change.</p>
+  <ol class="steps">
+    <li>Add the SDK and call <code>startRun()</code> at the top of the task.</li>
+    <li>Wrap each LLM call in <code>run.llm()</code> and each tool call in <code>run.tool()</code>.</li>
+    <li>Close with <code>run.end()</code> tagging the outcome.</li>
+    <li><b>Result:</b> a full run reconstructable from SigNoz data alone.</li>
+  </ol>
+<pre><code><span class="kw">const</span> run = hindsight.startRun({ agentId: <span class="st">"researcher"</span>, taskId });
+
+<span class="cm">// LLM step — records request + response, emits gen_ai.* span</span>
+<span class="kw">const</span> resp = <span class="kw">await</span> run.llm(() =&gt; anthropic.messages.create(params), params);
+
+<span class="cm">// Tool step — records args + output, hashes args for mock-matching</span>
+<span class="kw">const</span> results = <span class="kw">await</span> run.tool(<span class="st">"web_search"</span>, args, () =&gt; webSearch(args));
+
+run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// or "failure" | "timeout"</span></code></pre>
+  <div class="note"><b>Why it matters:</b> spans carry metadata + hashes (attribute size limits are real); full messages live as correlated logs. SigNoz's unified ClickHouse schema joins them back in one query — that join is what makes replay possible.</div>
+</div></section>
+
+<section id="replay"><div class="wrap">
+  <div class="sec-label">WF 02</div>
+  <h2>Replay a run</h2>
+  <div class="who">Actor: on-call engineer · Precondition: a trace_id · Output: a scrubbable timeline · Cost: $0.00</div>
+  <p class="lead">VCR mode for agents. Pull a historical run out of SigNoz, rebuild it as a RunGraph, and step through the whole thing — no model calls, no re-triggered side effects.</p>
+  <ol class="steps">
+    <li>Paste a <code>trace_id</code> (or open an incident from the inbox).</li>
+    <li>Engine fetches spans by trace_id + correlated payload logs, normalizes to an ordered step list.</li>
+    <li>Scrub the horizontal step timeline; each step expands to its transcript, tool I/O, and token/cost/latency badges.</li>
+    <li>Land on the failing step — it glows ember — and read exactly what the model saw.</li>
+  </ol>
+<pre><code><span class="cm"># RunGraph step shape</span>
+{ index: <span class="st">6</span>, kind: <span class="st">"tool"</span>, tool: <span class="st">"web_search"</span>,
+  request: {…}, response: <span class="st">"&lt;malformed JSON&gt;"</span>,
+  tokens: { in: <span class="st">1204</span>, out: <span class="st">88</span> }, cost: <span class="st">0.003</span>, latencyMs: <span class="st">412</span>,
+  error: <span class="st">"tool_output_parse_error"</span> }</code></pre>
+  <div class="note"><b>Stop here and you still ship something:</b> a read-only "flight recorder for agents." But a recorder without the fork is just another trace viewer.</div>
+</div></section>
+
+<section id="fork"><div class="wrap">
+  <div class="sec-label">WF 03</div>
+  <h2>Fork a run — the signature move</h2>
+  <div class="who">Actor: engineer diagnosing a failure · Precondition: a replayed run · Output: a span-linked counterfactual trace</div>
+  <p class="lead">Pick any step. Change exactly one variable. Re-execute live from that state — unchanged tools are mocked from the recording. The counterfactual emits a new trace, span-linked to the original.</p>
+  <ol class="steps">
+    <li>Select the step to fork from (e.g. step 6, the poisoned tool output).</li>
+    <li>Apply one <b>mutation</b> (table below).</li>
+    <li>Pick a <b>mock policy</b> — how tool calls behave during re-execution.</li>
+    <li>Run. Engine rebuilds conversation state up to step k, applies the mutation, re-runs live from there.</li>
+  </ol>
+  <h3>Mutation types (change exactly one)</h3>
+  <table>
+    <tr><th>Mutation</th><th>What it tests</th></tr>
+    <tr><td>swap model</td><td>Would Sonnet have recovered where Haiku spiraled?</td></tr>
+    <tr><td>edit system prompt</td><td>Does one more constraint fix the behavior?</td></tr>
+    <tr><td>override tool output</td><td>If the tool had returned valid JSON, does the run pass?</td></tr>
+    <tr><td>adjust params</td><td>Temperature / max_tokens sensitivity.</td></tr>
+    <tr><td>disable a tool</td><td>Was the wrong tool the trap?</td></tr>
+  </table>
+  <h3>Mock policy (how tools answer during re-execution)</h3>
+  <table>
+    <tr><th>Mode</th><th>Behavior</th></tr>
+    <tr><td>strict</td><td>All tools answered from recordings (args-hash match). Unmatched call → fail fast. Pure test of the model's reasoning.</td></tr>
+    <tr><td>hybrid <span style="color:var(--ember)">(default)</span></td><td>Hash match → mock. No match → run live if tool is flagged safe; side-effectful tools (send, write, pay) return a dry-run stub.</td></tr>
+    <tr><td>live</td><td>Everything live; side-effectful tools still gated behind a confirm.</td></tr>
+  </table>
+  <div class="note"><b>Safety:</b> side-effectful tools return dry-run stubs unless explicitly confirmed — that email won't send twice. Lineage is a real OTel span link, so the fork is visible inside SigNoz's own UI via <code>hindsight.fork.of</code>.</div>
+</div></section>
+
+<section id="incident"><div class="wrap">
+  <div class="sec-label">WF 04</div>
+  <h2>Incident loop — SigNoz opens the case</h2>
+  <div class="who">Actor: nobody (automated) · Trigger: a SigNoz alert rule · Output: an incident in the inbox, ready to replay</div>
+  <p class="lead">The front door of the whole product. An alert doesn't just display a problem — it initiates the fix.</p>
+  <ol class="steps">
+    <li>A provisioned alert rule trips (see triggers below).</li>
+    <li>SigNoz fires a webhook to <code>POST /hooks/signoz</code>; labels carry <code>agent.id</code>.</li>
+    <li>Engine resolves the offending trace and creates an <b>Incident</b> (stored in SQLite — rebuildable from SigNoz).</li>
+    <li>The incident appears in the Studio inbox with severity, agent, and age — frozen and ready to replay.</li>
+  </ol>
+  <table>
+    <tr><th>Alert rule</th><th>Trigger</th></tr>
+    <tr><td>Run failures</td><td>error rate &gt; 20% over 5m, per agent (threshold)</td></tr>
+    <tr><td>Loop tripwire</td><td><code>loop.score ≥ 3</code> — fires immediately (the demo's trigger)</td></tr>
+    <tr><td>Latency drift</td><td>p95 step.duration — SigNoz anomaly alert</td></tr>
+    <tr><td>Cost spike</td><td>cost-per-run anomaly, per agent</td></tr>
+  </table>
+</div></section>
+
+<section id="diagnose"><div class="wrap">
+  <div class="sec-label">WF 05 · stretch</div>
+  <h2>Diagnose with the SigNoz MCP server</h2>
+  <div class="who">Actor: engineer who wants a head start · Precondition: an open incident · Output: a proposed fork mutation</div>
+  <p class="lead">Hit "Diagnose." An LLM queries SigNoz through its MCP server, reads the run, and proposes the mutation to fork with — you accept, tweak, or ignore it.</p>
+  <ol class="steps">
+    <li>Open an incident and click <b>Diagnose</b>.</li>
+    <li>The LLM pulls the run's spans/logs via the SigNoz MCP server.</li>
+    <li>It returns a suggested fork point + mutation ("override step 6 tool output; it's malformed JSON").</li>
+    <li>Pre-fills the fork panel — you stay in control of the actual run.</li>
+  </ol>
+  <div class="note"><b>Keep it off the critical path.</b> This is garnish: first thing to cut if time runs out. Its value is the name-drop of SigNoz's flagship 2026 feature, not the demo's spine.</div>
+</div></section>
+
+<section id="compare"><div class="wrap">
+  <div class="sec-label">WF 06</div>
+  <h2>Compare &amp; verify — prove the fix</h2>
+  <div class="who">Actor: engineer · Precondition: original + fork traces · Output: a verdict, and a resolved incident</div>
+  <p class="lead">Two timelines, aligned. A diff computer matches steps (LCS on kind + tool name + args hash) and computes the deltas that matter.</p>
+  <div class="verdict-card">
+    <div class="vc-col fail">
+      <div class="vc-tag">Original · FAILED</div>
+      <div class="vc-big">14 steps · $0.41</div>
+      <div class="vc-sub">malformed tool JSON → retry loop → garbage output</div>
+    </div>
+    <div class="vc-col pass">
+      <div class="vc-tag">Fork · PASSED</div>
+      <div class="vc-big">4 steps · $0.09</div>
+      <div class="vc-sub">tool output overridden → clean completion</div>
+    </div>
+  </div>
+  <ul>
+    <li>Verdict card up top: outcome change, Δcost, Δtokens, Δsteps, plus a text diff of final outputs.</li>
+    <li>"Open both traces in SigNoz" — span-linked, so lineage is inspectable in the judges' own product.</li>
+    <li>If the fork passes where the original failed, the incident is marked <b>resolved-via-fork</b>.</li>
+  </ul>
+  <div class="note"><b>The line:</b> "We didn't guess the fix. We proved it, for nine cents." Optional stretch: an LLM-as-judge one-liner verdict; plain text diff is fine without it.</div>
+</div></section>
+
+<section id="postmortem"><div class="wrap">
+  <div class="sec-label">WF 07</div>
+  <h2>Generate a postmortem</h2>
+  <div class="who">Actor: engineer closing the incident · Precondition: a resolved fork · Output: a markdown incident review</div>
+  <p class="lead">One click. Template + run data → a markdown postmortem with deep links to both traces. The incident review writes itself.</p>
+<pre><code><span class="cm">## Incident 2026-07-22-researcher-loop</span>
+
+<span class="kw">**What failed:**</span> web_search returned malformed JSON at step 6 → retry loop
+                (14 steps, $0.41). <span class="cm">[trace 8f2a…](signoz://…)</span>
+
+<span class="kw">**What changed:**</span> override tool output with corrected JSON @ step 6
+
+<span class="kw">**Result:**</span> 4 steps, $0.09, PASSED. <span class="cm">[fork trace 3c1d…](signoz://…)</span>
+
+<span class="kw">**Deltas:**</span>  -10 steps · -$0.32 · outcome FAILED → PASSED</code></pre>
+  <div class="note"><b>Scope note:</b> a static markdown template with links is 80% of the value — this is the second thing to cut under deadline pressure, not the first.</div>
+</div></section>
+
+<section id="fleet"><div class="wrap">
+  <div class="sec-label">WF 08</div>
+  <h2>Fleet monitoring</h2>
+  <div class="who">Actor: anyone watching the fleet · Precondition: agents recording · Output: living dashboards + the meta-story</div>
+  <p class="lead">The ambient workflow behind all the others. Provisioned-as-JSON dashboards and metrics that quantify both agent health and Hindsight's own value.</p>
+  <h3>Two dashboards (shipped as JSON in the repo)</h3>
+  <ul>
+    <li><b>Agent Reliability:</b> success rate, incident count, p95 latency, tool error rate — per agent.</li>
+    <li><b>Hindsight Ops:</b> the meta-dashboard — incidents opened, forks run, <b>MTTR-for-agents</b> (created → resolved-via-fork), and "$ saved by fork vs full re-run."</li>
+  </ul>
+  <h3>Key metrics</h3>
+  <table>
+    <tr><th>Metric</th><th>Use</th></tr>
+    <tr><td>runs.total</td><td>{agent, outcome} → success-rate + error-rate alert</td></tr>
+    <tr><td>cost.usd.total</td><td>{agent, model} → cost panels + anomaly alert</td></tr>
+    <tr><td>step.duration</td><td>{kind} → p95 latency + anomaly alert</td></tr>
+    <tr><td>loop.score</td><td>repeated (tool, args.hash) in last N steps; ≥3 = looping</td></tr>
+    <tr><td>incidents / forks / forks.resolved</td><td>the meta-story: opened → run → proven</td></tr>
+  </table>
+  <div class="note"><b>Also self-hosted:</b> the engine instruments itself with OTel into the same SigNoz — dogfooding the tool that observes the agents.</div>
+</div></section>
+
+<footer><div class="wrap">
+  HINDSIGHT · workflows v1 · fork the past, fix the future
+</div></footer>
+
+</body>
+</html>

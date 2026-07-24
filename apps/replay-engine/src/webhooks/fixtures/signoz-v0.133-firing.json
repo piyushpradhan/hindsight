@@ -1,0 +1,30 @@
+{
+  "receiver": "hindsight-replay-engine",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "Hindsight: recorded run failed",
+        "threshold.name": "critical",
+        "team": "hindsight",
+        "trigger": "run_failed",
+        "trace_id": "11111111111111111111111111111111",
+        "hindsight.agent.id": "research",
+        "hindsight.run.id": "run-fixture",
+        "error.type": "MalformedToolJsonError"
+      },
+      "annotations": {
+        "summary": "Agent research run run-fixture failed (MalformedToolJsonError)"
+      },
+      "fingerprint": "signoz-v0133-fixture"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "Hindsight: recorded run failed",
+    "trace_id": "11111111111111111111111111111111"
+  },
+  "commonLabels": {
+    "team": "hindsight"
+  }
+}

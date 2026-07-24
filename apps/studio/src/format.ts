@@ -1,12 +1,14 @@
 import type { RunSummary } from "@hindsight/shared";
 
-export function fmtUsd(n: number): string {
+export function fmtUsd(n: number | null): string {
+  if (n === null) return "unknown";
   const abs = Math.abs(n);
   const s = abs >= 1 ? n.toFixed(2) : n.toFixed(4);
   return `$${s}`;
 }
 
-export function fmtTokens(n: number): string {
+export function fmtTokens(n: number | null): string {
+  if (n === null) return "unknown";
   return n.toLocaleString("en-US");
 }
 

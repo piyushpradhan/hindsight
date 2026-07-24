@@ -4,15 +4,33 @@
  * API/hook request in a span. Dogfooding: the replay engine's own traces flow
  * into the same SigNoz it reads from.
  */
-import { SpanStatusCode, trace, type Span, type Tracer } from "@opentelemetry/api";
+import {
+  SpanStatusCode,
+  trace,
+  type Counter,
+  type Histogram,
+  type Span,
+  type Tracer,
+} from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { METRIC } from "@hindsight/shared";
+
+export interface EngineMetrics {
+  incidents: Counter;
+  forks: Counter;
+  resolved: Counter;
+  resolutionDuration: Histogram;
+}
 
 export interface Telemetry {
   tracer: Tracer;
+  metrics: EngineMetrics;
   shutdown: () => Promise<void>;
 }
 
@@ -26,9 +44,29 @@ export function initTelemetry(opts: { serviceName: string; endpoint: string }): 
     ],
   });
   provider.register();
+  const metricProvider = new MeterProvider({
+    resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: opts.serviceName }),
+    readers: [
+      new PeriodicExportingMetricReader({
+        exporter: new OTLPMetricExporter({ url: `${opts.endpoint}/v1/metrics` }),
+        exportIntervalMillis: 10_000,
+      }),
+    ],
+  });
+  const meter = metricProvider.getMeter(opts.serviceName);
   return {
     tracer: trace.getTracer(opts.serviceName),
-    shutdown: () => provider.shutdown(),
+    metrics: {
+      incidents: meter.createCounter(METRIC.INCIDENTS_TOTAL),
+      forks: meter.createCounter(METRIC.FORKS_TOTAL),
+      resolved: meter.createCounter(METRIC.FORKS_RESOLVED_TOTAL),
+      resolutionDuration: meter.createHistogram(METRIC.INCIDENT_RESOLUTION_DURATION, {
+        unit: "ms",
+      }),
+    },
+    async shutdown() {
+      await Promise.allSettled([provider.shutdown(), metricProvider.shutdown()]);
+    },
   };
 }
 

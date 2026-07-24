@@ -19,10 +19,18 @@ export interface RunSummary {
   endTime?: string; // ISO 8601
   outcome: RunOutcome;
   stepCount: number;
-  totalTokens: number;
-  costUsd: number;
+  /** null means the provider did not report enough usage to calculate it. */
+  totalTokens: number | null;
+  /** null means usage or model pricing was unavailable. */
+  costUsd: number | null;
+  schemaVersion?: string;
+  payloadComplete?: boolean;
+  agentRevision?: string;
   /** If this run is a counterfactual fork, the trace id of the original. */
   forkOf?: string;
+  forkPoint?: number;
+  incidentId?: string;
+  mutationHash?: string;
   error?: string;
 }
 
@@ -34,12 +42,18 @@ export interface RunStep {
   name: string;
   startTime: string; // ISO 8601
   latencyMs: number;
-  costUsd: number;
+  costUsd: number | null;
   error?: string;
+  payloadPresent?: boolean;
+  payloadTruncated?: boolean;
+  payloadRedacted?: boolean;
 
   // llm steps
   model?: string;
+  provider?: string;
+  systemPrompt?: string;
   temperature?: number;
+  maxTokens?: number;
   inputTokens?: number;
   outputTokens?: number;
   requestMessages?: ChatMessage[];
@@ -49,18 +63,58 @@ export interface RunStep {
   toolName?: string;
   args?: unknown;
   argsHash?: string;
+  toolCallId?: string;
   toolOutput?: unknown;
+}
+
+export type CheckpointIssueCode =
+  | "legacy_schema"
+  | "root_marked_incomplete"
+  | "missing_step"
+  | "missing_payload"
+  | "truncated_payload"
+  | "redacted_payload"
+  | "missing_payload_hash"
+  | "payload_hash_mismatch"
+  | "payload_identity_mismatch"
+  | "missing_agent_revision"
+  | "missing_tool_call_id"
+  | "tool_call_mismatch"
+  | "tool_args_hash_mismatch";
+
+export interface CheckpointIssue {
+  code: CheckpointIssueCode;
+  stepIndex?: number;
+  detail: string;
+}
+
+export interface CheckpointReport {
+  complete: boolean;
+  schemaVersion?: string;
+  issues: CheckpointIssue[];
+}
+
+export interface RunEvent {
+  event: string;
+  runId?: string;
+  agentId?: string;
+  errorType?: string;
+  toolName?: string;
+  score?: number;
+  timestamp?: string;
 }
 
 /** A full run reconstructed from SigNoz spans + correlated payload logs. */
 export interface RunGraph {
   run: RunSummary;
   steps: RunStep[];
+  events?: RunEvent[];
+  checkpoint?: CheckpointReport;
 }
 
 /* ---------------------------------- fork ---------------------------------- */
 
-export type MockPolicy = "strict" | "hybrid" | "live";
+export type MockPolicy = "strict" | "hybrid";
 
 /** Exactly one mutation per fork — that discipline is the product. */
 export type Mutation =
@@ -77,6 +131,8 @@ export interface ForkRequest {
   forkAtStep: number;
   mutation: Mutation;
   mockPolicy: MockPolicy;
+  incidentId?: string;
+  idempotencyKey?: string;
 }
 
 export interface ForkResult {
@@ -85,7 +141,65 @@ export interface ForkResult {
   originalTraceId: string;
   outcome: RunOutcome;
   stepCount: number;
+  mutation: Mutation;
+  mutationHash: string;
+  runnerRevision: string;
+  checkpoint: CheckpointReport;
+  idempotencyKey: string;
+  verification?: IncidentVerification;
+  incident?: Incident;
   error?: string;
+}
+
+export interface ForkRunnerCapability {
+  agentId: string;
+  revision: string;
+  available: boolean;
+  mutations: Mutation["type"][];
+  safeLiveTools: string[];
+}
+
+export interface Capabilities {
+  schemaVersion: string;
+  liveSideEffects: false;
+  runners: ForkRunnerCapability[];
+}
+
+export interface RunnerCheckpoint {
+  schemaVersion: string;
+  originalTraceId: string;
+  originalSpanId: string;
+  runId: string;
+  agentId: string;
+  agentRevision: string;
+  forkAtStep: number;
+  steps: RunStep[];
+}
+
+export interface RunnerForkRequest {
+  idempotencyKey: string;
+  incidentId?: string;
+  mutation: Mutation;
+  mutationHash: string;
+  mockPolicy: MockPolicy;
+  checkpoint: RunnerCheckpoint;
+}
+
+export interface RunnerForkResponse {
+  forkRunId: string;
+  forkTraceId: string;
+  outcome: RunOutcome;
+  stepCount: number;
+  runnerRevision: string;
+  appliedMutationHash: string;
+  error?: string;
+}
+
+export interface ReplayResult {
+  traceId: string;
+  checkpoint: CheckpointReport;
+  steps: RunStep[];
+  liveCalls: 0;
 }
 
 /* -------------------------------- compare ---------------------------------- */
@@ -101,8 +215,8 @@ export interface StepAlignment {
 export interface CompareResult {
   original: RunSummary;
   fork: RunSummary;
-  deltaTokens: number;
-  deltaCostUsd: number;
+  deltaTokens: number | null;
+  deltaCostUsd: number | null;
   deltaLatencyMs: number;
   deltaSteps: number;
   outcomeChanged: boolean;
@@ -113,17 +227,49 @@ export interface CompareResult {
 
 /* -------------------------------- incidents -------------------------------- */
 
-export type IncidentStatus = "open" | "diagnosed" | "resolved_via_fork" | "dismissed";
+export type IncidentStatus = "open" | "verifying" | "resolved" | "dismissed";
+
+export interface IncidentVerification {
+  verified: boolean;
+  checkedAt: string;
+  reason: string;
+  originalOutcome?: RunOutcome;
+  forkOutcome?: RunOutcome;
+  originalFailure?: string;
+  comparison?: CompareResult;
+}
+
+export interface IncidentForkAttempt {
+  createdAt: string;
+  forkTraceId: string;
+  mutation: Mutation;
+  mutationHash: string;
+  outcome: RunOutcome;
+  runnerRevision: string;
+  idempotencyKey: string;
+  error?: string;
+  verification?: IncidentVerification;
+}
 
 export interface Incident {
   id: string;
   createdAt: string; // ISO 8601
   agentId: string;
   traceId: string;
+  runId?: string;
+  source?: string;
   alertName: string;
   severity?: string;
   status: IncidentStatus;
+  alertFingerprint?: string;
+  failureCondition?: string;
   forkTraceId?: string;
+  mutation?: Mutation;
+  mutationHash?: string;
+  verification?: IncidentVerification;
+  resolvedAt?: string;
+  resolutionMs?: number;
+  forkAttempts?: IncidentForkAttempt[];
   notes?: string;
 }
 
@@ -133,7 +279,7 @@ export interface AgentFleetStat {
   agentId: string;
   runsToday: number;
   successRate: number; // 0..1
-  costTodayUsd: number;
+  costTodayUsd: number | null;
   openIncidents: number;
 }
 
@@ -143,6 +289,8 @@ export interface AgentFleetStat {
  *   GET    /api/health                     -> { ok: true }
  *   GET    /api/runs?agentId=&limit=       -> RunSummary[]
  *   GET    /api/runs/:traceId              -> RunGraph
+ *   POST   /api/replays { traceId }         -> ReplayResult
+ *   GET    /api/capabilities                -> Capabilities
  *   POST   /api/forks        (ForkRequest) -> ForkResult
  *   GET    /api/compare?original=&fork=    -> CompareResult
  *   GET    /api/incidents                  -> Incident[]

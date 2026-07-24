@@ -1,7 +1,7 @@
 /**
  * Deterministic mock LLM provider. Output is a pure function of (messages,
  * system, seed, temperature); at temperature 0 it is fully reproducible. No
- * network — this is the default provider and the only one that must work.
+ * network — this is the explicit offline test/demo provider.
  *
  * The provider "plans" by counting how many tool results are already in the
  * conversation and emitting the next tool call from a fixed plan, or finishing.

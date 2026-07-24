@@ -14,8 +14,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/fork-runner.test.ts",
     "seed": "tsx scripts/seed.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "runner": "tsx scripts/runner.ts"
   },
   "dependencies": {
     "@hindsight/recorder": "workspace:*",

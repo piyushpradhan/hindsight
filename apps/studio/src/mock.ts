@@ -192,6 +192,9 @@ const failedRun: RunSummary = {
   stepCount: 8,
   totalTokens: 5048,
   costUsd: 0.0189,
+  schemaVersion: "1",
+  payloadComplete: true,
+  agentRevision: "fixture-runner@1",
   error: "malformed_tool_json: web_search returned invalid JSON on 2 consecutive calls",
 };
 
@@ -301,6 +304,9 @@ const forkRun: RunSummary = {
   stepCount: 4,
   totalTokens: 4052,
   costUsd: 0.0069,
+  schemaVersion: "1",
+  payloadComplete: true,
+  agentRevision: "fixture-runner@1",
   forkOf: MOCK_ORIGINAL_TRACE,
 };
 
@@ -419,6 +425,9 @@ const okRun: RunSummary = {
   stepCount: 5,
   totalTokens: 3212,
   costUsd: 0.0098,
+  schemaVersion: "1",
+  payloadComplete: true,
+  agentRevision: "fixture-runner@1",
 };
 
 const timeoutRun: RunSummary = {
@@ -438,9 +447,21 @@ const timeoutRun: RunSummary = {
 /* --------------------------------- exports --------------------------------- */
 
 const graphs: Record<string, RunGraph> = {
-  [MOCK_ORIGINAL_TRACE]: { run: failedRun, steps: failedSteps },
-  [MOCK_FORK_TRACE]: { run: forkRun, steps: forkSteps },
-  [MOCK_OK_TRACE]: { run: okRun, steps: okSteps },
+  [MOCK_ORIGINAL_TRACE]: {
+    run: failedRun,
+    steps: failedSteps,
+    checkpoint: { complete: true, schemaVersion: "1", issues: [] },
+  },
+  [MOCK_FORK_TRACE]: {
+    run: forkRun,
+    steps: forkSteps,
+    checkpoint: { complete: true, schemaVersion: "1", issues: [] },
+  },
+  [MOCK_OK_TRACE]: {
+    run: okRun,
+    steps: okSteps,
+    checkpoint: { complete: true, schemaVersion: "1", issues: [] },
+  },
 };
 
 export function mockGraphFor(traceId: string): RunGraph {
@@ -482,12 +503,12 @@ function incidentStore(): Incident[] {
         traceId: MOCK_TIMEOUT_TRACE,
         alertName: "step duration p95 anomaly — support-triage",
         severity: "warning",
-        status: "diagnosed",
+        status: "verifying",
         notes: "Suspected loop in ticket_lookup; awaiting counterfactual fork.",
       },
     ];
   }
-  return incidentState;
+  return incidentState!;
 }
 
 export function mockIncidents(): Incident[] {
@@ -537,12 +558,18 @@ export function mockFleet(): AgentFleetStat[] {
 }
 
 export function mockForkResult(req: ForkRequest): ForkResult {
+  const mutationHash = "fixture-mutation-hash";
   return {
     forkRunId: "run_2b7d4e9f",
     forkTraceId: MOCK_FORK_TRACE,
     originalTraceId: req.traceId,
     outcome: "success",
     stepCount: 4,
+    mutation: req.mutation,
+    mutationHash,
+    runnerRevision: "fixture-runner@1",
+    checkpoint: { complete: true, schemaVersion: "1", issues: [] },
+    idempotencyKey: req.idempotencyKey ?? "fixture-idempotency-key",
   };
 }
 

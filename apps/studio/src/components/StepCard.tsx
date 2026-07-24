@@ -65,12 +65,23 @@ function ToolBody({ step }: { step: RunStep }) {
 }
 
 export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, registerRef, forkPanel }: Props) {
-  const cls = ["card", "step-card", step.error ? "failed" : "", selected ? "selected" : ""]
+  // Payloads are long, so a step stays collapsed to its head row unless it's
+  // the one you're looking at or it failed — the failed step (which is selected
+  // by default) opens itself, so the failure is never buried under other steps' JSON.
+  const expanded = selected || !!step.error;
+  const cls = ["card", "step-card", step.kind, step.error ? "failed" : "", selected ? "selected" : "", expanded ? "" : "collapsed"]
     .filter(Boolean)
     .join(" ");
   return (
-    <article className={cls} ref={registerRef} data-step={step.index}>
-      <div className="step-head" onClick={onSelect}>
+    <article className={cls} ref={registerRef} data-step={step.index} id={`step-${step.index}`}>
+      <button
+        className="step-head"
+        type="button"
+        onClick={onSelect}
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Inspecting" : "Inspect"} step ${step.index}: ${step.name}`}
+      >
+        <span className={`step-caret ${expanded ? "open" : ""}`} aria-hidden="true">›</span>
         <Badge tone="ink">#{step.index}</Badge>
         <Badge>{step.kind}</Badge>
         <span className="step-title">{step.name}</span>
@@ -81,18 +92,34 @@ export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, reg
         <Badge>{fmtMs(step.latencyMs)}</Badge>
         <Badge>{fmtUsd(step.costUsd)}</Badge>
         {step.error && <Badge tone="ember">error</Badge>}
-      </div>
+      </button>
 
-      {step.kind === "llm" ? <LlmBody step={step} /> : <ToolBody step={step} />}
+      {expanded && (
+        <>
+          {step.kind === "llm" ? <LlmBody step={step} /> : <ToolBody step={step} />}
 
-      {step.error && <div className="step-error">{step.error}</div>}
+          {step.error && <div className="step-error">{step.error}</div>}
 
-      <div className="step-actions">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onToggleFork}>
-          {forkOpen ? "Close fork panel" : "Fork from this step"}
-        </button>
-      </div>
-      {forkOpen && forkPanel}
+          <div className="step-actions">
+            {/* The fork is the product's whole point, so its trigger is the ember
+                primary on the step you're looking at — quiet ghost everywhere else,
+                so exactly one fork invitation reads as the peak (the failed step by
+                default). Once the panel is open it steps back to a close control. */}
+            <button
+              type="button"
+              className={selected && !forkOpen ? "btn btn-ember" : "btn btn-ghost btn-sm"}
+              onClick={onToggleFork}
+            >
+              {forkOpen
+                ? "Close fork panel"
+                : selected
+                  ? (step.error ? "Fork to fix this step →" : "Fork from this step →")
+                  : "Fork from this step"}
+            </button>
+          </div>
+          {forkOpen && forkPanel}
+        </>
+      )}
     </article>
   );
 }

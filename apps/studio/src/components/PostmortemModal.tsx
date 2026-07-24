@@ -1,3 +1,4 @@
+import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { shortId } from "../format";
@@ -26,14 +27,6 @@ export function PostmortemModal({ incidentId, onClose }: Props) {
     };
   }, [incidentId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const copy = async () => {
     if (!markdown) return;
     try {
@@ -46,27 +39,31 @@ export function PostmortemModal({ incidentId, onClose }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="eyebrow modal-eyebrow">postmortem · {shortId(incidentId)}</span>
-          <span className="spacer" />
-          <button
-            className="btn btn-ghost btn-sm"
-            type="button"
-            onClick={() => void copy()}
-            disabled={!markdown}
-          >
-            {copied ? "Copied ✓" : "Copy markdown"}
-          </button>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        {error ? <ErrorNote error={error} /> : null}
-        {!markdown && !error && <div className="loading">generating postmortem…</div>}
-        {markdown && <pre className="json md-block">{markdown}</pre>}
-      </div>
-    </div>
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Viewport className="modal-overlay">
+          <Dialog.Popup className="modal-card">
+            <div className="modal-head">
+              <Dialog.Title className="eyebrow modal-eyebrow">
+                postmortem · {shortId(incidentId)}
+              </Dialog.Title>
+              <span className="spacer" />
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => void copy()}
+                disabled={!markdown}
+              >
+                {copied ? "Copied ✓" : "Copy markdown"}
+              </button>
+              <Dialog.Close className="btn btn-ghost btn-sm">Close</Dialog.Close>
+            </div>
+            {error ? <ErrorNote error={error} /> : null}
+            {!markdown && !error && <div className="loading">generating postmortem…</div>}
+            {markdown && <pre className="json md-block">{markdown}</pre>}
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

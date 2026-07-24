@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { RunGraph } from "@hindsight/shared";
 import { api, signozTraceUrl } from "../api";
 import { fmtMs, fmtTokens, fmtUsd, runDurationMs, shortId } from "../format";
@@ -11,6 +11,8 @@ import { ForkPanel } from "../components/ForkPanel";
 
 export function RunDetailScreen() {
   const { traceId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const incidentId = searchParams.get("incident") ?? undefined;
   const [graph, setGraph] = useState<RunGraph | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -67,6 +69,12 @@ export function RunDetailScreen() {
       } else if ((e.key === "f" || e.key === "F") && selected !== null) {
         e.preventDefault();
         setForkAt((cur) => (cur === selected ? null : selected));
+      } else if (e.key === "g" || e.key === "G") {
+        const firstFailed = ordered.find((s) => s.error);
+        if (firstFailed) {
+          e.preventDefault();
+          handleSelect(firstFailed.index);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -97,9 +105,9 @@ export function RunDetailScreen() {
   const duration = runDurationMs(run);
 
   return (
-    <div className="page">
+    <div className="page run-page">
       <div className="page-head">
-        <div className="eyebrow">Run timeline</div>
+        <div className="eyebrow">Causal trace</div>
         <div className="row">
           <h1>
             {run.agentId} <span className="muted mono" style={{ fontSize: 16 }}>· {shortId(run.traceId)}</span>
@@ -115,9 +123,6 @@ export function RunDetailScreen() {
 
       <div className="run-sticky">
         <StepScrubber steps={steps} selected={selected} onSelect={handleSelect} />
-        <div className="kbd-hint">
-          <kbd>←</kbd> <kbd>→</kbd> step · <kbd>f</kbd> fork this step · replay is free — no model calls, $0.00
-        </div>
         <div className="summary-strip">
           <OutcomeBadge outcome={run.outcome} />
           <Badge>{steps.length} steps</Badge>
@@ -130,6 +135,16 @@ export function RunDetailScreen() {
               <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>
             </Badge>
           )}
+        </div>
+        <div className="scrubber-help">
+          <div className="scrubber-legend">
+            <span><b className="lg-circle">●</b> llm</span>
+            <span><b className="lg-square">■</b> tool</span>
+            <span><b className="lg-fail">●</b> failed</span>
+          </div>
+          <div className="kbd-hint">
+            <kbd>←</kbd> <kbd>→</kbd> step · <kbd>f</kbd> fork · <kbd>g</kbd> jump to failure · replay is free — no model calls, $0.00
+          </div>
         </div>
       </div>
 
@@ -147,7 +162,17 @@ export function RunDetailScreen() {
             onSelect={() => setSelected(step.index)}
             onToggleFork={() => setForkAt(forkAt === step.index ? null : step.index)}
             registerRef={registerRef(step.index)}
-            forkPanel={<ForkPanel traceId={run.traceId} step={step} tools={tools} />}
+            forkPanel={
+              <ForkPanel
+                traceId={run.traceId}
+                agentId={run.agentId}
+                agentRevision={run.agentRevision}
+                checkpoint={graph.checkpoint}
+                incidentId={incidentId}
+                step={step}
+                tools={tools}
+              />
+            }
           />
         ))}
       </div>

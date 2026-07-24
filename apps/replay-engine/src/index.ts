@@ -5,7 +5,7 @@ import { IncidentStore } from "./incidents/store.js";
 import { initTelemetry, registerTraceHooks } from "./otel.js";
 import { registerRoutes } from "./routes.js";
 import { SignozClient } from "./signoz/client.js";
-import { DemoForkExecutor } from "./fork/executor.js";
+import { HttpForkExecutor } from "./fork/executor.js";
 
 const config = loadConfig();
 
@@ -23,10 +23,13 @@ if (!signoz.authed) {
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
-const forkExecutor = new DemoForkExecutor(signoz, { otlpHttpUrl: config.otlpHttpUrl });
+const forkExecutor = new HttpForkExecutor(signoz, {
+  runners: config.runners,
+  timeoutMs: config.runnerTimeoutMs,
+});
 
 registerTraceHooks(app, telemetry);
-registerRoutes(app, { config, signoz, incidents, forkExecutor });
+registerRoutes(app, { config, signoz, incidents, forkExecutor, metrics: telemetry.metrics });
 
 const shutdown = async (signal: string) => {
   app.log.info(`received ${signal}, shutting down`);
