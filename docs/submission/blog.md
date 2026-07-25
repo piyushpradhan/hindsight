@@ -49,7 +49,7 @@ agent revision, task, final outcome, total steps, token usage, cost, and capture
 policy. Child spans represent ordered LLM and tool steps. Fork spans include
 the original trace ID, branch point, incident ID, and mutation hash.
 
-![A failed Hindsight run in SigNoz](../assets/signoz-failed-trace.png)
+![A failed Hindsight run in SigNoz](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-failed-trace.png)
 
 The screenshot shows a controlled malformed-tool failure. The trace has three
 spans and two errors. The selected LLM span includes its model, token counts,
@@ -61,7 +61,7 @@ query. Hindsight writes each payload as an OpenTelemetry log record correlated
 to the same trace and span. Every record contains a SHA-256 hash, byte count,
 redaction flag, truncation flag, schema version, and payload reference.
 
-![Payload and failure logs correlated to the trace](../assets/signoz-correlated-logs.png)
+![Payload and failure logs correlated to the trace](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-correlated-logs.png)
 
 The logs preserve the exact LLM request and response, the tool arguments and
 malformed output, and the `run_failed` event. This gave me a useful rule:
@@ -91,7 +91,7 @@ The same recorder emits metrics for run outcomes, step duration, tool errors,
 loop score, tokens, and cost. The replay engine adds incidents, fork attempts,
 and verified-resolution duration.
 
-![Hindsight metrics in SigNoz](../assets/signoz-metrics.png)
+![Hindsight metrics in SigNoz](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-metrics.png)
 
 Two dashboards ship as JSON:
 
@@ -167,9 +167,10 @@ Three lessons survived every redesign:
   button.
 
 Hindsight now builds successfully, its telemetry configuration is validated
-against a shared contract, and 53 tests cover recording, payload policy, graph
-reconstruction, replay, mutation validation, webhook parsing, deduplication,
-and verified resolution.
+against a shared contract, and 80 automated checks cover recording, payload
+policy, graph reconstruction, replay, mutation validation, webhook parsing,
+deduplication, responsive layout, sorting, provisioning, and verified
+resolution.
 
 The result is the workflow I wanted at the start: **Record. Replay. Fork. Prove
 the fix.** SigNoz supplies the evidence; Hindsight turns it into a controlled

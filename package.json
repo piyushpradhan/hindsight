@@ -6,6 +6,7 @@
   "scripts": {
     "build": "pnpm -r --filter='./packages/*' build && pnpm -r --filter='./apps/*' build",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test && pnpm test:provision",
     "dev": "pnpm -r --parallel dev",
     "doctor": "tsx scripts/doctor.ts",
     "provision:signoz": "tsx scripts/provision-signoz.ts",

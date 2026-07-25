@@ -1,7 +1,7 @@
 # Agents of SigNoz submission
 
-Use this as the source of truth while filling the form. Replace the two
-publication links before submitting.
+Use this as the source of truth while filling the form. Replace the YouTube
+link before submitting.
 
 ## Email
 
@@ -68,7 +68,7 @@ recorded evidence proves the mutation fixed the original failure.
 
 ## Project blog
 
-`[PUBLISHED BLOG LINK]`
+https://gist.github.com/piyushpradhan/73dbf671caa28e55dd8ab23153febe4d
 
 ## Hackathon experience
 

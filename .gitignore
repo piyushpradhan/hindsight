@@ -8,3 +8,13 @@ dist/
 *.db-shm
 *.db-wal
 .DS_Store
+brag-output/
+docs/demo-video/work/
+docs/demo-video/review-v2/
+docs/demo-video/hyperframes-review-v2/
+docs/demo-video/*.mp4
+docs/demo-video/captures/02-taskline.png
+docs/demo-video/captures/05-incidents.png
+docs/demo-video/captures/06-run-failure.png
+docs/demo-video/captures/06b-fix-panel-live.png
+docs/demo-video/captures/07-compare.png
