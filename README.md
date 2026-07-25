@@ -107,6 +107,14 @@ An incident appears only when an installed trace-correlated SigNoz rule
 delivers an authenticated webhook. Hindsight never inserts a fake incident in
 the main demo path.
 
+**The incident list is empty right after `make demo` — give it about three
+minutes.** The seeded failures are already in SigNoz, but the rules evaluate on
+a schedule (`frequency: 30s` over a `1m` window) and ingestion adds its own lag,
+so nothing reaches `/hooks/signoz` until the first evaluation covers those runs.
+On a verified run, four seeded failures produced four incidents a little over
+three minutes after seeding finished. An empty list before then is the pipeline
+working, not a broken install.
+
 The JSON under `infra/` is versioned source configuration. Repository copies
 remain marked `template_uninstalled`; `make provision` strips that
 template-only metadata and installs missing resources through the tested
