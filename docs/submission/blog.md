@@ -1,185 +1,179 @@
-# From Autopsy to Time Machine: Replaying and Forking AI Agents with SigNoz
+# Hindsight: replaying a failed AI agent with SigNoz
 
-When an AI agent fails, the trace usually tells me *where* it happened. That is
-useful, but it leaves the expensive question unanswered: if I change the bad
-tool result, prompt, or model setting, does the agent actually recover?
+SigNoz could already show me the span where an agent failed. What I couldn't
+answer from that trace was more useful: if I replaced the bad tool result,
+would the rest of the run recover?
 
-I built **Hindsight** to answer that question. It is a flight recorder for AI
-agents that records a run into SigNoz, reconstructs a checkpoint without live
-calls, and forks the real registered runtime from one chosen step. The original
-run stays immutable. The fork becomes a counterfactual experiment with its own
-trace, and Hindsight resolves the incident only after the evidence proves that
-the experiment removed the original failure.
+I built **Hindsight** during Agents of SigNoz to test exactly that. It records
+an agent run in SigNoz, rebuilds the state before a selected step without
+calling the model or its tools, then resumes the registered runtime with one
+change. The original run stays untouched; the fork gets its own linked trace.
+Hindsight only closes the incident after those two traces prove that the
+change removed the failure.
 
-That sounds like a replay debugger. The difficult part was making every word in
-that description honest.
+Calling it a replay debugger made for a tidy pitch. Making the replay honest
+was most of the work.
 
-## A trace is an autopsy
+## A trace wasn't enough
 
-Agent failures are rarely one bad function call. An agent chooses a tool,
-constructs arguments, consumes the result, updates its conversation, and makes
-another decision. A timeout or malformed response near the end of that chain
-may be caused by something several steps earlier.
+An agent rarely fails in one neat function. It chooses a tool, builds the
+arguments, reads the result, updates its conversation, and decides what to do
+next. A malformed response near the end may have started with a bad choice
+several steps earlier.
 
-A normal trace preserves the timing and parent-child structure, but replay
-needs more. It needs the exact request and response payloads, tool call IDs,
-arguments, outputs, ordering, agent revision, and evidence that none of those
-records were truncated or changed.
+A normal trace preserves timing and parent-child relationships. To rebuild a
+checkpoint, I also needed the exact requests and responses, tool call IDs,
+arguments, outputs, occurrence order, agent revision, and proof that nobody
+had truncated or changed the recording.
 
-My first design mistake was treating replay as "run the agent again while
-mocking a few calls." That is not replay. If an unrecorded dependency quietly
-runs live, the result is neither reproducible nor safe. Hindsight therefore
-separates two operations:
+My first design treated replay as "run the agent again and mock a few calls."
+That wasn't replay. One unrecorded dependency could quietly run live, leaving
+me with a result I couldn't reproduce or trust. Hindsight now separates the
+two jobs:
 
-- **Replay** reads recorded responses only and performs zero provider or tool
-  calls.
-- **Fork** reconstructs state before one step, applies one explicit mutation,
-  and resumes through a registered runtime.
+- **Replay** reads recorded responses and makes no provider or tool calls.
+- **Fork** reconstructs the state before one step, applies an explicit
+  mutation, and hands the checkpoint to a registered runtime.
 
-The distinction made the architecture simpler and gave each operation a clear
-trust boundary.
+The word *replay* now has a hard boundary. If the recording can't support it,
+the operation stops.
 
-## SigNoz as the evidence store
+## SigNoz stores the evidence
 
-Hindsight does not copy agent telemetry into a second analytics database.
-SigNoz is the system of record.
+I didn't add another analytics database beside the observability stack;
+SigNoz stays the system of record.
 
-Each run is an OpenTelemetry trace. The root span identifies the run, agent,
-agent revision, task, final outcome, total steps, token usage, cost, and capture
-policy. Child spans represent ordered LLM and tool steps. Fork spans include
-the original trace ID, branch point, incident ID, and mutation hash.
+Every run becomes an OpenTelemetry trace whose root span carries the run and
+agent IDs, agent revision, task, outcome, step count, token usage, cost, and
+capture policy. Ordered child spans represent model and tool steps; a fork
+also records the original trace ID, branch point, incident ID, and mutation
+hash.
 
 ![A failed Hindsight run in SigNoz](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-failed-trace.png)
 
-The screenshot shows a controlled malformed-tool failure. The trace has three
-spans and two errors. The selected LLM span includes its model, token counts,
-cost, step index, schema version, and payload reference.
+This trace comes from the controlled malformed-tool case used in the demo,
+with three spans and two errors. On the selected model span, SigNoz shows the
+model, token counts, cost, step index, schema version, and payload reference.
 
-Full messages and tool outputs do not belong in span attributes. Attribute
-size limits make large values unreliable, and huge spans become painful to
-query. Hindsight writes each payload as an OpenTelemetry log record correlated
-to the same trace and span. Every record contains a SHA-256 hash, byte count,
-redaction flag, truncation flag, schema version, and payload reference.
+Full messages don't fit well in span attributes. Large attributes can hit
+size limits, and stuffing raw tool output into every span makes the trace
+awkward to query. Hindsight writes each payload as an OpenTelemetry log record
+linked to the same trace and span instead. The record carries a SHA-256 hash,
+byte count, redaction and truncation flags, schema version, and payload
+reference.
 
 ![Payload and failure logs correlated to the trace](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-correlated-logs.png)
 
-The logs preserve the exact LLM request and response, the tool arguments and
-malformed output, and the `run_failed` event. This gave me a useful rule:
-**spans describe the path; correlated logs preserve the replay evidence.**
+Those logs hold the exact model request and response, the tool arguments and
+malformed output, plus the `run_failed` event. Spans show the route through the
+agent; correlated logs hold the material needed to travel it again.
 
-## Fail closed instead of faking a replay
+## Missing evidence stops the replay
 
-Before replaying, Hindsight builds an ordered run graph from SigNoz spans and
-payload logs. It checks that every step has the expected payload, that hashes
-match, that tool calls retain their IDs and occurrence order, and that the
-recording is complete.
+Before it replays anything, Hindsight builds an ordered run graph from SigNoz
+spans and payload logs. It checks every expected payload, recalculates the
+hashes, and keeps tool call IDs in their original occurrence order.
 
-If a payload was redacted, truncated, deleted by retention, or modified,
-replay returns a structured checkpoint error. It never falls through to a live
-model or tool. This is less convenient than "best effort," but it is the only
-behavior I would trust during incident response.
+If retention removed a payload, a policy redacted it, the recorder truncated
+it, or the hash no longer matches, Hindsight returns a checkpoint error. It
+doesn't fill the gap with a live model or tool call. "Best effort" would be
+convenient here, but it would also make the answer worthless during an
+incident.
 
-The recorder supports three payload modes. `off` avoids storing sensitive
-content. `redacted` is the safe default for real systems. `full` is used by the
-local demonstration because a complete payload is required for a fork.
-Operators have to choose retention and privacy policy deliberately; Hindsight
-does not pretend that raw agent messages are harmless.
+The recorder has three capture modes for different environments. `off` keeps
+sensitive content out of storage, while `redacted` supplies the safer default
+for a real deployment. The local demo uses `full` because forking requires the
+complete payload. Retention and privacy still belong to the operator; agent
+messages aren't harmless just because they sit in an observability system.
 
-## Observing the fleet, not just one trace
+## The fleet view
 
-The same recorder emits metrics for run outcomes, step duration, tool errors,
-loop score, tokens, and cost. The replay engine adds incidents, fork attempts,
-and verified-resolution duration.
+The same recorder emits metrics for outcomes, step duration, tool errors, loop
+score, tokens, and cost. Replay adds incident counts, fork attempts, and the
+time taken to verify a fix.
 
 ![Hindsight metrics in SigNoz](https://raw.githubusercontent.com/piyushpradhan/hindsight/main/docs/assets/signoz-metrics.png)
 
-Two dashboards ship as JSON:
+Two JSON dashboards ship with the project: **Agent Reliability** shows success
+rate, open incidents, p95 step latency, and tool error rate by agent, while
+**Hindsight Ops** tracks opened incidents, executed forks, and verification
+time.
 
-- **Agent Reliability** groups success rate, incidents, p95 step latency, and
-  tool error rate by agent.
-- **Hindsight Ops** measures incidents opened, forks executed, and the time
-  until a fork is verified.
+The fleet view answers a different question: which agents keep breaking, and
+does this process cut the time between an alert and a proven fix?
 
-This changed the product story. Hindsight is not only a debugger for one trace.
-It also measures whether the debugging workflow is improving agent reliability
-and resolution time.
+## An alert needs a real trace
 
-## From a SigNoz alert to a testable incident
+The recorder sends trace-linked `run_failed` and `loop_detected` log events to
+SigNoz. Alert rules group them by trace ID, run ID, agent ID, and failure type.
+An authenticated webhook then opens an incident in Hindsight, with
+deduplication so repeated deliveries don't create copies.
 
-The recorder emits trace-correlated `run_failed` and `loop_detected` log
-events. SigNoz rules group those events by trace ID, run ID, agent ID, and
-failure type. An authenticated webhook sends the firing alert to Hindsight,
-which deduplicates deliveries and opens one incident anchored to the trace.
+Cost and latency alerts work differently. A fleet metric can say something
+looks wrong, but it can't identify the run that caused it. Hindsight leaves
+those alerts as notifications until an operator chooses a trace rather than
+inventing an incident ID from aggregate data.
 
-Aggregate cost and latency alerts deliberately do not invent trace incidents.
-A fleet metric can indicate that something is wrong, but it does not provide
-an authoritative run ID. Those rules remain notifications until an operator
-selects a real trace.
+So the incident page only claims what SigNoz can support.
 
-This is a small design decision with an important consequence: the incident
-screen never claims more evidence than SigNoz supplied.
+## Change one value, then run the real agent
 
-## Forking one variable
-
-A fork request identifies the original trace, branch step, mutation, mock
-policy, optional incident, and idempotency key. The replay engine sends a
-complete checkpoint to a configured runner—not a callback URL supplied by the
+A fork request names the original trace, branch step, mutation, mock policy,
+optional incident, and idempotency key. The replay service sends the rebuilt
+checkpoint to a configured runner. It never accepts a callback URL from the
 browser.
 
-The runner rejects the request if the recorded agent revision does not match.
-Recorded tools are matched by name, normalized argument hash, and occurrence.
-In strict mode, every required tool result must already exist. A tool declared
-safe may run in hybrid mode, but side-effecting tools never execute live.
+The runner rejects a checkpoint when its registered agent revision differs
+from the recording. It matches recorded tools by name, normalized argument
+hash, and occurrence; strict mode requires every tool result to exist already.
+Hybrid mode may call a tool marked safe, but it never runs side-effecting tools
+live.
 
-For the demonstration, I use a tool-output override: replace the malformed
-result at the failed step, then resume the same agent loop. The fork emits a
-new trace with an OpenTelemetry span link to the original.
+In the demo, the chosen mutation replaces a malformed tool result. Hindsight
+then resumes the same agent loop, and the new run emits a trace with an
+OpenTelemetry span link back to the original. The original trace doesn't
+move.
 
-## A green response is not proof
+## A successful response doesn't prove the fix
 
-The most important part of Hindsight is what happens after the fork succeeds.
-The engine queries both traces from SigNoz and verifies:
+After a fork returns, Hindsight queries both traces from SigNoz and checks:
 
-1. the original trace contains the incident's failure condition;
-2. the fork links to the original trace and exact branch point;
-3. the fork carries the same incident ID and mutation hash;
-4. the registered runner revision matches;
-5. the fork outcome is successful; and
-6. the original failure is absent from the fork.
+1. the original trace contains the incident's failure;
+2. the fork points to that trace and the selected branch step;
+3. its incident ID and mutation hash match the request;
+4. the runner used the recorded agent revision;
+5. the new run succeeded;
+6. the original failure doesn't appear in the fork.
 
-Only that verification path can mark an incident resolved. A manual status
-update cannot do it, and a resolved Alertmanager notification cannot do it.
-If telemetry arrives late or any evidence disagrees, the incident returns to
-open with the failed verification reason.
+Only this verifier can resolve an incident. A manual status edit can't, and
+neither can a recovered Alertmanager notification. When telemetry arrives
+late or the evidence disagrees, Hindsight keeps the incident open and shows
+the failed check.
 
-## What I learned
+## What survived the build
 
-The hardest part was not drawing the trace timeline. It was preserving honest
-boundaries between recorded data, fixture data, replay, and execution.
+The trace timeline was the easy part. The harder part was keeping recorded
+data, demo fixtures, replay, and live execution from blurring together.
 
-Three lessons survived every redesign:
+Observability became useful once it drove a constrained action, not another
+chart. Replay also turned out to be a data-integrity problem: a missing record
+must stay missing, where an operator can see it, instead of disappearing
+behind a live call. And incident resolution belongs to evidence, not a green
+button.
 
-- Observability becomes more useful when it drives a constrained action, not
-  merely another visualization.
-- Replayability is a data-integrity property. Missing evidence must be visible,
-  not patched over with live calls.
-- Incident resolution should be an evidence-backed state transition, not a
-  button.
+Hindsight now passes 80 automated checks covering the recorder, capture
+policy, graph reconstruction, replay, mutations, webhook parsing,
+deduplication, interface behavior, provisioning, and verified resolution. Its
+telemetry configuration also passes a shared contract check.
 
-Hindsight now builds successfully, its telemetry configuration is validated
-against a shared contract, and 80 automated checks cover recording, payload
-policy, graph reconstruction, replay, mutation validation, webhook parsing,
-deduplication, responsive layout, sorting, provisioning, and verified
-resolution.
-
-The result is the workflow I wanted at the start: **Record. Replay. Fork. Prove
-the fix.** SigNoz supplies the evidence; Hindsight turns it into a controlled
-counterfactual.
+The path is now the one I wanted when I started: **record, replay, fork, prove
+the fix.** SigNoz holds the evidence, and Hindsight turns one change into a
+testable before-and-after result.
 
 ---
 
 Repository: https://github.com/piyushpradhan/hindsight
 
-AI coding assistants helped with implementation, testing, design review, and
-editing. The architecture, technical decisions, integration verification, and
-final text were reviewed and owned by the author.
+I used AI coding assistants for implementation, tests, design review, and
+editing. I reviewed the architecture, technical decisions, SigNoz integration,
+and final text, and I own the submitted result.
