@@ -24,7 +24,7 @@ function MessageView({ msg }: { msg: ChatMessage }) {
           ? "role-assistant"
           : "role-tool";
   return (
-    <div className="msg">
+    <div className={`msg ${roleCls}`}>
       <div className={`msg-role ${roleCls}`}>{msg.role}</div>
       <SmartPayload value={msg.content} />
     </div>

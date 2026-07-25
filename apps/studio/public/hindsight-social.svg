@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#101010"/>
+  <path d="M0 1h1200M0 629h1200" stroke="#3d3a39"/>
+  <g transform="translate(92 88) scale(2.5)">
+    <path d="M8 6v20M24 6v20M8 16h16" fill="none" stroke="#eeeeee" stroke-width="3"/>
+    <path d="m17 16 7-7" fill="none" stroke="#8a8380" stroke-width="3"/>
+    <rect x="15" y="14" width="4" height="4" fill="#ee6018"/>
+  </g>
+  <text x="92" y="245" fill="#eeeeee" font-family="Arial, Helvetica, sans-serif" font-size="78" letter-spacing="-2">Hindsight</text>
+  <text x="96" y="294" fill="#8a8380" font-family="monospace" font-size="17" letter-spacing="2">FLIGHT RECORDER FOR AI AGENTS</text>
+  <path d="M96 358h1008" stroke="#3d3a39"/>
+  <text x="96" y="430" fill="#eeeeee" font-family="Arial, Helvetica, sans-serif" font-size="34">Trace the cause. Test the change. Keep the proof.</text>
+  <circle cx="98" cy="517" r="5" fill="#ee6018"/>
+  <text x="118" y="524" fill="#b8b3b0" font-family="monospace" font-size="17">RECORDED EVIDENCE → CONTROLLED BRANCH → VERIFIED FIX</text>
+</svg>

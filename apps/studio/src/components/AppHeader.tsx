@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { api, MOCK_MODE, SIGNOZ_DASHBOARDS_URL } from "../api";
 import { FleetStrip } from "./FleetStrip";
 
@@ -43,53 +43,73 @@ function EngineStatus() {
 }
 
 export function AppHeader() {
+  const isLanding = useLocation().pathname === "/";
+
   return (
-    <header className="app-header">
-      <div className="sidebar-inner">
+    <header className={`app-header${isLanding ? " landing-header" : ""}`}>
+      <div className="header-inner">
         <Link to="/" className="wordmark">
-          <span className="wordmark-mark">H</span>
+          <img className="wordmark-mark" src="/favicon.svg" alt="" />
           <span>
-            Hindsight
+            HINDSIGHT
             <small>Flight recorder</small>
           </span>
         </Link>
-        <nav className="nav-links" aria-label="Primary navigation">
-          <NavLink to="/incidents" className={({ isActive }) => (isActive ? "active" : "")}>
-            <span>
-              Incident queue
-              <small>Resolve failures</small>
-            </span>
-          </NavLink>
-          <NavLink to="/runs" className={({ isActive }) => (isActive ? "active" : "")}>
-            <span>
-              All runs
-              <small>Browse recordings</small>
-            </span>
-          </NavLink>
-        </nav>
-        <div className="sidebar-section">
-          <div className="sidebar-label">Fleet health</div>
-          <FleetStrip />
-        </div>
-        <div className="sidebar-footer">
-          <div className="sidebar-label">System</div>
-          {MOCK_MODE ? (
-            <a
-              className="mock-pill"
-              href="?mock=0"
-              title="Studio is serving fixture data (?mock=1). Click to switch back to the live API."
-            >
-              <span className="dot" />
-              fixture data
-            </a>
+        {!isLanding && (
+          <nav className="nav-links" aria-label="Primary navigation">
+            <NavLink to="/incidents" className={({ isActive }) => (isActive ? "active" : "")}>
+              Incidents
+            </NavLink>
+            <NavLink to="/runs" className={({ isActive }) => (isActive ? "active" : "")}>
+              Runs
+            </NavLink>
+          </nav>
+        )}
+        <div className="header-system">
+          {isLanding ? (
+            <>
+              <a
+                className="header-link landing-github"
+                href="https://github.com/piyushpradhan/hindsight"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub <span aria-hidden="true">↗</span>
+              </a>
+              <Link className="btn btn-light btn-sm" to="/incidents">Open app</Link>
+            </>
           ) : (
-            <EngineStatus />
+            <>
+              {MOCK_MODE ? (
+                <a
+                  className="mock-pill"
+                  href="?mock=0"
+                  title="Studio is serving fixture data (?mock=1). Click to switch back to the live API."
+                >
+                  <span className="dot" />
+                  fixture data
+                </a>
+              ) : (
+                <EngineStatus />
+              )}
+              <a className="signoz-link" href={SIGNOZ_DASHBOARDS_URL} target="_blank" rel="noreferrer">
+                SigNoz <span aria-hidden="true">↗</span>
+              </a>
+            </>
           )}
-          <a className="signoz-link" href={SIGNOZ_DASHBOARDS_URL} target="_blank" rel="noreferrer">
-            Open SigNoz <span aria-hidden="true">↗</span>
-          </a>
         </div>
       </div>
+      {!isLanding && (
+        <div className="header-telemetry">
+          <span
+            className="telemetry-label"
+            title={MOCK_MODE ? "Fixture fleet totals for today" : "Live fleet totals for today"}
+          >
+            FLEET / TODAY{MOCK_MODE ? " / FIXTURE" : ""}
+          </span>
+          <FleetStrip />
+        </div>
+      )}
     </header>
   );
 }

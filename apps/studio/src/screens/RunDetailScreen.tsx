@@ -107,17 +107,19 @@ export function RunDetailScreen() {
     <div className="page run-page">
       <div className="page-head">
         <div className="eyebrow">Causal trace</div>
-        <div className="row">
-          <h1>
-            {run.agentId} <span className="muted mono" style={{ fontSize: 16 }}>· {shortId(run.traceId)}</span>
+        <div className="run-title-row">
+          <h1 className="run-title">
+            <span>{run.agentId}</span>
+            <span className="run-id">· {shortId(run.traceId)}</span>
           </h1>
-          <span className="spacer" />
-          <Link to={incidentId ? "/incidents" : "/runs"} className="trace-link">
-            ← {incidentId ? "incident queue" : "all runs"}
-          </Link>
-          <a className="btn btn-ghost btn-sm" href={signozTraceUrl(run.traceId)} target="_blank" rel="noreferrer">
-            Open in SigNoz ↗
-          </a>
+          <div className="run-title-actions">
+            <Link to={incidentId ? "/incidents" : "/runs"} className="trace-link">
+              ← {incidentId ? "incident queue" : "all runs"}
+            </Link>
+            <a className="btn btn-ghost btn-sm" href={signozTraceUrl(run.traceId)} target="_blank" rel="noreferrer">
+              Open in SigNoz ↗
+            </a>
+          </div>
         </div>
         {run.error && (
           <div className="run-error" role="alert">

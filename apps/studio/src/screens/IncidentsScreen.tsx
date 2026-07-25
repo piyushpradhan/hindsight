@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { Link, useNavigate } from "react-router-dom";
 import type { Incident, IncidentStatus } from "@hindsight/shared";
 import { api } from "../api";
@@ -40,6 +41,8 @@ export function IncidentsScreen() {
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [postmortemId, setPostmortemId] = useState<string | null>(null);
+  const [dismissTarget, setDismissTarget] = useState<Incident | null>(null);
+  const [dismissReason, setDismissReason] = useState("");
   const [undo, setUndo] = useState<{ id: string; prev: IncidentStatus; label: string } | null>(null);
   const undoTimer = useRef<number | undefined>(undefined);
   const navigate = useNavigate();
@@ -69,24 +72,28 @@ export function IncidentsScreen() {
     try {
       await api.patchIncident(id, p);
       await reload();
+      return true;
     } catch (e) {
       setActionError(e);
+      return false;
     }
   };
 
   // Status changes fire instantly, so every transition leaves an Undo behind for
   // a few seconds instead of asking for confirmation up front.
-  const transition = async (inc: Incident, to: IncidentStatus, label: string) => {
+  const transition = async (
+    inc: Incident,
+    to: IncidentStatus,
+    label: string,
+    notes?: string,
+  ) => {
     const prev = inc.status;
-    let notes: string | undefined;
-    if (to === "dismissed") {
-      notes = window.prompt("Why is this incident being dismissed?")?.trim();
-      if (!notes) return;
-    }
-    await patch(inc.id, { status: to, ...(notes ? { notes } : {}) });
+    const changed = await patch(inc.id, { status: to, ...(notes ? { notes } : {}) });
+    if (!changed) return false;
     setUndo({ id: inc.id, prev, label });
     window.clearTimeout(undoTimer.current);
     undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
+    return true;
   };
 
   const doUndo = async () => {
@@ -97,17 +104,36 @@ export function IncidentsScreen() {
     await patch(target.id, { status: target.prev });
   };
 
+  const dismiss = async () => {
+    const reason = dismissReason.trim();
+    if (!dismissTarget || !reason) return;
+    const changed = await transition(dismissTarget, "dismissed", "Dismissed", reason);
+    if (!changed) return;
+    setDismissTarget(null);
+    setDismissReason("");
+  };
+
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
   return (
     <div className="page incidents-page">
-      <div className="page-head">
-        <div className="eyebrow">Start here</div>
-        <h1>Resolve an agent failure</h1>
-        <p className="page-sub">
-          Choose an open incident below. Hindsight preserves the original run while you test and
-          verify a fix.
-        </p>
+      <div className="page-head incidents-head">
+        <div className="incidents-head-copy">
+          <div className="eyebrow">Start here</div>
+          <h1>Resolve an agent failure</h1>
+          <p className="page-sub">
+            Choose an open incident below. Hindsight preserves the original run while you test and
+            verify a fix.
+          </p>
+        </div>
+        <details className="manual-trace">
+          <summary className="btn btn-ghost btn-sm">Open trace</summary>
+          <div className="manual-trace-panel">
+            <strong>Open a trace manually</strong>
+            <p>Use this when you have a SigNoz trace ID that is not already in the queue.</p>
+            <TraceLookup onCreateIncident={createIncident} />
+          </div>
+        </details>
       </div>
 
       <section className="workflow-guide" aria-labelledby="workflow-title">
@@ -180,21 +206,21 @@ export function IncidentsScreen() {
                       if (e.key === "Enter") navigate(incidentUrl(inc));
                     }}
                   >
-                    <td>
+                    <td data-label="Incident">
                       <div className="incident-title">{inc.alertName}</div>
-                      <div className="incident-meta">
-                        <span>{inc.agentId}</span>
-                        <SeverityBadge severity={inc.severity} />
-                        <span className="td-mono">{shortId(inc.traceId)}…</span>
-                      </div>
                       {inc.notes && <div className="inc-notes">{inc.notes}</div>}
+                      <div className="incident-meta">
+                        <span className="incident-agent">Agent · {inc.agentId}</span>
+                        <SeverityBadge severity={inc.severity} />
+                        <span className="td-mono">Trace · {shortId(inc.traceId)}…</span>
+                      </div>
                     </td>
-                    <td className="td-mono muted">{timeAgo(inc.createdAt)}</td>
-                    <td><IncidentStatusBadge status={inc.status} /></td>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td className="td-mono muted" data-label="Detected">{timeAgo(inc.createdAt)}</td>
+                    <td data-label="Status"><IncidentStatusBadge status={inc.status} /></td>
+                    <td data-label="Next step" onClick={(e) => e.stopPropagation()}>
                       <div className="inc-actions">
                         {inc.status === "verifying" ? (
-                          <span className="muted td-mono">Checking test…</span>
+                          <span className="inc-action-status muted td-mono">Checking test…</span>
                         ) : (
                           <Link
                             className={`btn btn-sm ${inc.status === "open" ? "btn-ember" : "btn-ghost"}`}
@@ -212,7 +238,18 @@ export function IncidentsScreen() {
                               </button>
                             )}
                             {transitionsFor(inc.status).map((t) => (
-                              <button key={t.to} type="button" onClick={() => void transition(inc, t.to, t.label)}>
+                              <button
+                                key={t.to}
+                                type="button"
+                                onClick={() => {
+                                  if (t.to === "dismissed") {
+                                    setDismissTarget(inc);
+                                    setDismissReason("");
+                                  } else {
+                                    void transition(inc, t.to, t.label);
+                                  }
+                                }}
+                              >
                                 {t.label}
                               </button>
                             ))}
@@ -228,15 +265,49 @@ export function IncidentsScreen() {
         </div>
       )}
 
-      <details className="manual-trace">
-        <summary>Open a trace manually</summary>
-        <p>Use this when you have a SigNoz trace ID that is not already in the queue.</p>
-        <TraceLookup onCreateIncident={createIncident} />
-      </details>
-
       {postmortemId && (
         <PostmortemModal incidentId={postmortemId} onClose={() => setPostmortemId(null)} />
       )}
+      <Dialog.Root
+        open={dismissTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDismissTarget(null);
+            setDismissReason("");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Viewport className="modal-overlay">
+            <Dialog.Popup className="modal-card dismiss-card">
+              <Dialog.Title className="eyebrow modal-eyebrow">Dismiss incident</Dialog.Title>
+              <Dialog.Description className="modal-text">
+                Record why this failure does not need a fix. You can reopen it from the queue.
+              </Dialog.Description>
+              <label className="field-label" htmlFor="dismiss-reason">Dismissal reason</label>
+              <textarea
+                id="dismiss-reason"
+                className="input"
+                value={dismissReason}
+                onChange={(event) => setDismissReason(event.target.value)}
+                placeholder="Explain why this incident can be dismissed"
+                autoFocus
+              />
+              <div className="modal-actions">
+                <Dialog.Close className="btn btn-ghost" type="button">Cancel</Dialog.Close>
+                <button
+                  className="btn btn-light"
+                  type="button"
+                  disabled={!dismissReason.trim()}
+                  onClick={() => void dismiss()}
+                >
+                  Dismiss incident
+                </button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
       {undo && (
         <div className="toast" role="status">
           <span>{undo.label} · {shortId(undo.id)}</span>

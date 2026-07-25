@@ -47,12 +47,14 @@ export function FleetStrip() {
           <span
             key={s.agentId}
             className="fleet-chip"
-            title={`${s.runsToday} runs today · ${s.openIncidents} open incidents`}
+            title={`${s.runsToday} runs today · ${pct}% success · ${fmtUsd(s.costTodayUsd)} cost today · ${s.openIncidents} open incidents`}
+            aria-label={`${s.agentId}: ${s.runsToday} runs today, ${pct}% success, ${fmtUsd(s.costTodayUsd)} cost today, ${s.openIncidents} open incidents`}
           >
             <span className="f-id">{s.agentId}</span>
-            <span className={rateCls}>{pct}%</span>
-            <span>{fmtUsd(s.costTodayUsd)}</span>
-            {s.openIncidents > 0 && <span className="f-bad">{s.openIncidents} inc</span>}
+            <span>{s.runsToday} runs</span>
+            <span className={rateCls}>{pct}% pass</span>
+            <span>{fmtUsd(s.costTodayUsd)} cost</span>
+            {s.openIncidents > 0 && <span className="f-bad">{s.openIncidents} open</span>}
           </span>
         );
       })}

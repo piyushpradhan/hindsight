@@ -267,7 +267,7 @@ export function ForkPanel({
         )}
 
         {type === "prompt_edit" && (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="fork-grid-wide">
             <label className="field-label" htmlFor="fork-prompt">new instructions</label>
             <textarea
               id="fork-prompt"
@@ -280,7 +280,7 @@ export function ForkPanel({
         )}
 
         {type === "tool_output_override" && (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="fork-grid-wide">
             <label className="field-label" htmlFor="fork-output">
               corrected tool result (JSON)
             </label>
