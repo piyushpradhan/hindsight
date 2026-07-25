@@ -6,8 +6,13 @@
 # seed demo data, and open the UIs. Provisioned dashboards/alerts live under
 # infra/dashboards and infra/alerts (import into SigNoz once; see README).
 
+-include .env
+export
+
 # ---- config -----------------------------------------------------------------
 SIGNOZ_URL       ?= http://localhost:8080
+SIGNOZ_API_KEY   ?=
+SIGNOZ_WEBHOOK_SECRET ?=
 STUDIO_URL       ?= http://localhost:5173
 REPLAY_ENGINE    ?= http://localhost:4123
 RUNNER_URL       ?= http://127.0.0.1:4124
@@ -22,7 +27,7 @@ LOG_DIR          ?= .hindsight-logs
 OPEN := $(shell command -v open >/dev/null 2>&1 && echo open || echo xdg-open)
 
 .DEFAULT_GOAL := demo
-.PHONY: demo up dev seed seed-codex down help
+.PHONY: demo doctor up dev seed seed-codex down help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -30,7 +35,7 @@ help: ## Show available targets
 
 # ---- the money target -------------------------------------------------------
 # Goal: from zero to a live, seeded demo in under 5 minutes.
-demo: up seed ## Install, build, start stack, seed demo data, open UIs (<5 min)
+demo: doctor up seed ## Validate, build, start, seed, and open the demo (<5 min)
 	@echo ""
 	@echo "  Hindsight demo is live."
 	@echo "  SigNoz (system of record): $(SIGNOZ_URL)"
@@ -42,6 +47,9 @@ demo: up seed ## Install, build, start stack, seed demo data, open UIs (<5 min)
 	@$(OPEN) "$(TODO_URL)" >/dev/null 2>&1 || true
 
 # ---- thin wrappers ----------------------------------------------------------
+doctor: ## Validate local prerequisites and SigNoz credentials
+	pnpm doctor
+
 up: ## Install deps, build, and start replay-engine, studio, and Taskline
 	@echo ">> Assuming SigNoz is already up at $(SIGNOZ_URL) (managed under pours/deployment)."
 	pnpm install
@@ -52,10 +60,18 @@ up: ## Install deps, build, and start replay-engine, studio, and Taskline
 	@echo ">> Starting AI to-do demo on $(TODO_URL) ..."
 	HINDSIGHT_TODO_PROVIDER='$(HINDSIGHT_TODO_PROVIDER)' OLLAMA_HOST='$(OLLAMA_HOST)' OLLAMA_MODEL='$(OLLAMA_MODEL)' pnpm --filter @hindsight/demo-agents todo > $(LOG_DIR)/todo.log 2>&1 &
 	@echo ">> Starting replay-engine on $(REPLAY_ENGINE) ..."
-	HINDSIGHT_RUNNERS='$(HINDSIGHT_RUNNERS)' pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
+	@SIGNOZ_API_KEY='$(SIGNOZ_API_KEY)' SIGNOZ_WEBHOOK_SECRET='$(SIGNOZ_WEBHOOK_SECRET)' HINDSIGHT_RUNNERS='$(HINDSIGHT_RUNNERS)' pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
 	@echo ">> Starting studio on $(STUDIO_URL) ..."
 	pnpm --filter @hindsight/studio dev > $(LOG_DIR)/studio.log 2>&1 &
-	@echo ">> Logs in $(LOG_DIR)/ . Give the services a few seconds to bind."
+	@for url in "$(RUNNER_URL)/hindsight/capabilities" "$(REPLAY_ENGINE)/api/health" "$(STUDIO_URL)" "$(TODO_URL)"; do \
+		attempt=0; \
+		until curl --fail --silent --max-time 2 "$$url" >/dev/null; do \
+			attempt=$$((attempt + 1)); \
+			if [ "$$attempt" -ge 40 ]; then echo "Timed out waiting for $$url"; exit 1; fi; \
+			sleep 0.25; \
+		done; \
+	done
+	@echo ">> Services ready. Logs in $(LOG_DIR)/."
 
 dev: ## Run the whole workspace in watch mode (foreground, all packages)
 	pnpm dev

@@ -7,6 +7,7 @@
     "build": "pnpm -r --filter='./packages/*' build && pnpm -r --filter='./apps/*' build",
     "typecheck": "pnpm -r typecheck",
     "dev": "pnpm -r --parallel dev",
+    "doctor": "tsx scripts/doctor.ts",
     "validate:infra": "tsx scripts/validate-infra.ts"
   },
   "devDependencies": {

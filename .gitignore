@@ -2,6 +2,9 @@ plan.html
 node_modules/
 dist/
 .env
+.hindsight-logs/
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 .DS_Store

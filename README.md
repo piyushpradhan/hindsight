@@ -4,7 +4,7 @@
 without live calls, and fork a complete checkpoint through the agent's
 registered runtime — with [SigNoz](https://signoz.io) as the system of record.
 
-<!-- TODO: hero GIF — a run failing, an incident opening, a one-click fork succeeding -->
+![Hindsight turns a recorded failure into a testable branch](docs/assets/hindsight-landing.png)
 
 ---
 
@@ -65,18 +65,24 @@ and measured resolution time.
 ## Quickstart
 
 SigNoz must already be running at `http://localhost:8080`. Create a SigNoz API
-key, choose a webhook bearer secret, and export them before starting Hindsight:
+key, choose a webhook bearer secret, then copy and fill the local environment:
 
 ```bash
-export SIGNOZ_API_KEY='...'
-export SIGNOZ_WEBHOOK_SECRET='...'
+cp .env.example .env
+# Set SIGNOZ_API_KEY and SIGNOZ_WEBHOOK_SECRET in .env.
+make doctor
 make demo
 ```
 
-`make demo` builds the workspace, starts the reference runner (`:4124`),
-replay-engine (`:4123`), and Studio (`:5173`), then records mixed demo runs.
-It does **not** seed an incident. An incident appears only when an installed
-trace-correlated SigNoz rule delivers an authenticated webhook.
+`make doctor` verifies Node, pnpm, the Foundry files, SigNoz v0.133.x, OTLP
+ingestion, and both required credentials. `make demo` builds the workspace,
+waits for the reference runner (`:4124`), replay-engine (`:4123`), Studio
+(`:5173`), and Taskline (`:4174`) to become healthy, then records mixed demo
+runs.
+
+An incident appears only when an installed trace-correlated SigNoz rule
+delivers an authenticated webhook. Hindsight never inserts a fake incident in
+the main demo path.
 
 The JSON under `infra/` is versioned configuration, not proof of installation.
 Every file starts as `template_uninstalled`; confirm imported resources through
@@ -84,15 +90,30 @@ the SigNoz API:
 
 - **Dashboards** — SigNoz UI → Dashboards → *Import JSON* → `infra/dashboards/agent-reliability.json` and `infra/dashboards/hindsight-ops.json`.
 - **Run incident alerts** — create a webhook channel named
-  `hindsight-replay-engine` for `http://localhost:4123/hooks/signoz` with
-  `Authorization: Bearer <SIGNOZ_WEBHOOK_SECRET>`, then submit
-  `infra/alerts/run-failures.json` and `loop-tripwire.json` to SigNoz
+  `hindsight-replay-engine` for `http://localhost:4123/hooks/signoz`. Leave the
+  username empty and use `SIGNOZ_WEBHOOK_SECRET` as the bearer token, then
+  submit `infra/alerts/run-failures.json` and `loop-tripwire.json` to SigNoz
   `POST /api/v2/rules`.
 - **Fleet notifications** — `cost-spike.json` and `latency-drift.json` have no
   Hindsight incident channel because an aggregate metric has no authoritative
   trace ID.
 
-Other targets: `make up` (start stack), `make seed` (demo data), `make dev` (watch mode), `make down` (stop app processes; SigNoz untouched).
+Other targets: `make up` (start stack), `make seed` (demo data), `make dev`
+(watch mode), `make down` (stop app processes; SigNoz untouched).
+
+### Live SigNoz evidence
+
+The repository's demo recorder has been verified against SigNoz EE v0.133.0.
+The captures below show real OTLP data, not fixture UI.
+
+![Hindsight metrics ingested by SigNoz](docs/assets/signoz-metrics.png)
+
+![A failed agent trace with Hindsight step attributes](docs/assets/signoz-failed-trace.png)
+
+![Payload and run-failure logs correlated to the failed trace](docs/assets/signoz-correlated-logs.png)
+
+`pnpm build`, all 53 unit tests, and `pnpm validate:infra` pass on the submitted
+revision.
 
 ### Taskline: AI to-do agent demo
 
@@ -113,8 +134,6 @@ ANTHROPIC_API_KEY='...' HINDSIGHT_DEMO_PROVIDER=anthropic \
   pnpm --filter @hindsight/demo-agents demo
 ```
 
-<!-- TODO: screenshot — the two imported dashboards side by side -->
-
 ---
 
 ## Fork walkthrough
@@ -130,7 +149,8 @@ ANTHROPIC_API_KEY='...' HINDSIGHT_DEMO_PROVIDER=anthropic \
    the linked fork succeeded, the original failure/event is absent, and all
    lineage and mutation evidence matches. Otherwise the incident returns open.
 
-<!-- TODO: GIF — the full loop-to-fork-to-resolved flow in Studio -->
+The exact three-minute recording path is in
+[`docs/submission/demo-script.md`](docs/submission/demo-script.md).
 
 ---
 
@@ -172,3 +192,9 @@ ANTHROPIC_API_KEY='...' HINDSIGHT_DEMO_PROVIDER=anthropic \
 ## License
 
 [MIT](./LICENSE) © 2026 Hindsight.
+
+## AI assistance disclosure
+
+AI coding assistants were used during implementation, testing, design review,
+and documentation. Architecture, product decisions, integration verification,
+and the submitted result were reviewed and owned by the project author.
