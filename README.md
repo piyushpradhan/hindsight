@@ -90,9 +90,11 @@ the SigNoz API:
 
 - **Dashboards** — SigNoz UI → Dashboards → *Import JSON* → `infra/dashboards/agent-reliability.json` and `infra/dashboards/hindsight-ops.json`.
 - **Run incident alerts** — create a webhook channel named
-  `hindsight-replay-engine` for `http://localhost:4123/hooks/signoz`. Leave the
-  username empty and use `SIGNOZ_WEBHOOK_SECRET` as the bearer token, then
-  submit `infra/alerts/run-failures.json` and `loop-tripwire.json` to SigNoz
+  `hindsight-replay-engine` for
+  `http://host.docker.internal:4123/hooks/signoz` when SigNoz runs in Docker
+  (`http://localhost:4123/hooks/signoz` otherwise). Leave the username empty,
+  use `SIGNOZ_WEBHOOK_SECRET` as the password, then submit
+  `infra/alerts/run-failures.json` and `loop-tripwire.json` to SigNoz
   `POST /api/v2/rules`.
 - **Fleet notifications** — `cost-spike.json` and `latency-drift.json` have no
   Hindsight incident channel because an aggregate metric has no authoritative

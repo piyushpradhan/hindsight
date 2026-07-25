@@ -108,6 +108,19 @@ test("manual resolution and unauthenticated webhooks are rejected", async (t) =>
   });
   assert.equal(webhook.statusCode, 401);
 
+  const signozWebhook = await app.inject({
+    method: "POST",
+    url: "/hooks/signoz",
+    headers: {
+      authorization: `Basic ${Buffer.from(":webhook-secret").toString("base64")}`,
+    },
+    payload: {
+      alerts: [{ labels: { alertname: "failed", trace_id: TRACE_ID }, annotations: {} }],
+    },
+  });
+  assert.equal(signozWebhook.statusCode, 200);
+  assert.equal(signozWebhook.json().source, "signoz");
+
   const created = await app.inject({
     method: "POST",
     url: "/api/incidents",

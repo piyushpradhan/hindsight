@@ -371,10 +371,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       return reply.code(503).send({ error: "webhook_secret_missing" });
     }
     const authorization = req.headers.authorization;
-    if (
-      !authorization?.startsWith("Bearer ") ||
-      !sameSecret(authorization.slice("Bearer ".length), config.signozWebhookSecret)
-    ) {
+    if (!sameSecret(webhookCredential(authorization), config.signozWebhookSecret)) {
       return reply.code(401).send({ error: "webhook_unauthorized" });
     }
     const outcome = handleSignozWebhook(req.body, incidents);
@@ -517,7 +514,15 @@ async function waitForGraph(
   return null;
 }
 
-function sameSecret(actual: string, expected: string): boolean {
+function webhookCredential(authorization: string | undefined): string | undefined {
+  if (authorization?.startsWith("Bearer ")) return authorization.slice("Bearer ".length);
+  if (!authorization?.startsWith("Basic ")) return undefined;
+  const decoded = Buffer.from(authorization.slice("Basic ".length), "base64").toString();
+  return decoded.startsWith(":") ? decoded.slice(1) : undefined;
+}
+
+function sameSecret(actual: string | undefined, expected: string): boolean {
+  if (actual === undefined) return false;
   const actualBytes = Buffer.from(actual);
   const expectedBytes = Buffer.from(expected);
   return (
