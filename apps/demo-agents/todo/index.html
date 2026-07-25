@@ -13,7 +13,19 @@
       h1 { font-size: clamp(2.4rem, 7vw, 4.5rem); line-height: .9; letter-spacing: -.07em; margin: 0 0 14px; }
       p { color: #68706c; margin: 0; }
       a { color: #286548; }
-      .mode { white-space: nowrap; padding: 7px 10px; border: 1px solid #d7d7ce; border-radius: 999px; font-size: 12px; }
+      .mode { white-space: nowrap; padding: 7px 10px; border: 1px solid #d7d7ce; border-radius: 999px; font-size: 12px; background: transparent; color: inherit; font-weight: 500; cursor: pointer; }
+      .mode:hover { border-color: #b8bcb5; }
+      .settings { display: none; background: #fff; border: 1px solid #deded5; border-radius: 18px; padding: 20px; margin-bottom: 18px; box-shadow: 0 12px 30px rgba(36, 45, 40, .05); }
+      .settings.visible { display: block; }
+      .settings h2 { margin: 0 0 4px; font-size: 15px; }
+      .settings .hint { font-size: 13px; margin-bottom: 16px; }
+      .settings label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #767d79; margin-bottom: 6px; }
+      .settings .field { margin-bottom: 14px; }
+      .settings select, .settings input { width: 100%; border: 1px solid #c9cbc5; border-radius: 11px; padding: 11px 12px; font: inherit; background: #fff; }
+      .settings .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .settings .secondary { background: transparent; color: #5c6560; border: 1px solid #d7d7ce; font-weight: 500; }
+      .settings .status { font-size: 13px; color: #68706c; }
+      .settings .status.error { color: #9f3d31; }
       form, .tasks, .result { background: #fff; border: 1px solid #deded5; border-radius: 18px; padding: 20px; box-shadow: 0 12px 30px rgba(36, 45, 40, .05); }
       form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
       input { min-width: 0; border: 1px solid #c9cbc5; border-radius: 11px; padding: 13px 14px; font: inherit; }
@@ -44,8 +56,44 @@
           <h1>Taskline</h1>
           <p>A tiny task agent. Every decision and tool call is recorded by Hindsight.</p>
         </div>
-        <span class="mode" id="mode">checking mode…</span>
+        <button class="mode" id="mode" aria-expanded="false" aria-controls="settings">checking mode…</button>
       </header>
+
+      <section class="settings" id="settings" aria-label="Provider settings">
+        <h2>Provider</h2>
+        <p class="hint">
+          Runs against the deterministic offline provider by default. Point it at a real
+          model to watch Hindsight record live LLM steps. A key entered here is held in the
+          Taskline process memory only — never written to disk, never sent to the browser,
+          never recorded in a trace — and is dropped when Taskline restarts.
+        </p>
+        <div class="field">
+          <label for="settings-mode">Provider</label>
+          <select id="settings-mode">
+            <option value="offline">Offline · deterministic, no key</option>
+            <option value="openai">Hosted · any OpenAI-compatible API</option>
+            <option value="ollama">Ollama · local model</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
+        <div class="field" id="field-baseurl">
+          <label for="settings-baseurl">Base URL</label>
+          <input id="settings-baseurl" autocomplete="off" spellcheck="false" placeholder="https://api.cerebras.ai/v1" />
+        </div>
+        <div class="field" id="field-model">
+          <label for="settings-model">Model</label>
+          <input id="settings-model" autocomplete="off" spellcheck="false" placeholder="gpt-oss-120b" />
+        </div>
+        <div class="field" id="field-key">
+          <label for="settings-key">API key</label>
+          <input id="settings-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key" />
+        </div>
+        <div class="row">
+          <button id="settings-save">Save</button>
+          <button id="settings-reset" class="secondary" type="button">Reset to environment</button>
+          <span class="status" id="settings-status"></span>
+        </div>
+      </section>
 
       <form id="form">
         <input id="prompt" aria-label="Task request" placeholder="Prepare the Hindsight demo tomorrow" autocomplete="off" />
@@ -90,6 +138,14 @@
             body: JSON.stringify({ text, fail: failNext }),
           });
           const data = await response.json();
+          if (data.error === "api_key_required") {
+            result.className = "result visible failure";
+            result.innerHTML = `<strong>No API key for this provider</strong>
+              <p>Open the provider panel and paste a key, or switch back to the offline provider.</p>`;
+            settingsPanel.classList.add("visible");
+            modeButton.setAttribute("aria-expanded", "true");
+            return;
+          }
           renderTasks(data.tasks || []);
           const failed = data.outcome !== "success";
           result.className = `result visible${failed ? " failure" : ""}`;
@@ -107,14 +163,90 @@
         }
       });
 
+      const settingsPanel = document.querySelector("#settings");
+      const modeButton = document.querySelector("#mode");
+      const modeSelect = document.querySelector("#settings-mode");
+      const baseUrlInput = document.querySelector("#settings-baseurl");
+      const modelInput = document.querySelector("#settings-model");
+      const keyInput = document.querySelector("#settings-key");
+      const settingsStatus = document.querySelector("#settings-status");
+
+      modeButton.addEventListener("click", () => {
+        const open = settingsPanel.classList.toggle("visible");
+        modeButton.setAttribute("aria-expanded", String(open));
+      });
+
+      modeSelect.addEventListener("change", () => applyFieldVisibility(modeSelect.value));
+
+      function applyFieldVisibility(mode) {
+        document.querySelector("#field-baseurl").style.display = mode === "openai" ? "" : "none";
+        document.querySelector("#field-model").style.display =
+          mode === "openai" || mode === "ollama" ? "" : "none";
+        document.querySelector("#field-key").style.display =
+          mode === "openai" || mode === "anthropic" ? "" : "none";
+      }
+
+      function describe(data) {
+        if (data.mode === "openai") {
+          const host = data.baseUrl ? new URL(data.baseUrl).hostname.replace(/^api\./, "") : "hosted";
+          return `AI · ${host} ${data.model || ""}`.trim();
+        }
+        if (data.mode === "ollama") return `AI · Ollama ${data.model || ""}`.trim();
+        if (data.mode === "anthropic") return "AI · Anthropic";
+        return "AI · offline demo";
+      }
+
+      function renderSettings(data) {
+        modeButton.textContent = `${describe(data)} · change`;
+        modeSelect.value = data.mode;
+        baseUrlInput.value = data.baseUrl || "";
+        baseUrlInput.placeholder = (data.defaults && data.defaults.baseUrl) || "";
+        modelInput.value = data.model || "";
+        modelInput.placeholder = (data.defaults && data.defaults.model) || "";
+        keyInput.value = "";
+        keyInput.placeholder = data.hasKey ? "Key already set — paste to replace" : "Paste a key";
+        applyFieldVisibility(data.mode);
+      }
+
+      document.querySelector("#settings-save").addEventListener("click", async (event) => {
+        event.preventDefault();
+        await saveSettings({
+          mode: modeSelect.value,
+          baseUrl: baseUrlInput.value.trim(),
+          model: modelInput.value.trim(),
+          apiKey: keyInput.value,
+        });
+      });
+
+      document.querySelector("#settings-reset").addEventListener("click", () => saveSettings({ reset: true }));
+
+      async function saveSettings(body) {
+        settingsStatus.className = "status";
+        settingsStatus.textContent = "Saving…";
+        try {
+          const response = await fetch("/api/settings", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            settingsStatus.className = "status error";
+            settingsStatus.textContent =
+              data.error === "api_key_required" ? "That provider needs an API key." : data.error;
+            return;
+          }
+          renderSettings(data);
+          settingsStatus.textContent = body.reset ? "Back to the environment default." : "Saved for this session.";
+        } catch (error) {
+          settingsStatus.className = "status error";
+          settingsStatus.textContent = error.message;
+        }
+      }
+
       async function loadTasks() {
         const data = await fetch("/api/tasks").then((response) => response.json());
-        document.querySelector("#mode").textContent =
-          data.mode === "ollama"
-            ? `AI · Ollama ${data.model}`
-            : data.mode === "anthropic"
-              ? "AI · Anthropic"
-              : "AI · offline demo";
+        renderSettings(data);
         renderTasks(data.tasks);
       }
 

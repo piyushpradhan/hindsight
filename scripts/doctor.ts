@@ -28,9 +28,21 @@ await check("SIGNOZ_API_KEY", !!apiKey, apiKey ? "set" : "missing");
 await check("SIGNOZ_WEBHOOK_SECRET", !!webhookSecret, webhookSecret ? "set" : "missing");
 await check(
   "Taskline provider",
-  ["offline", "anthropic", "ollama"].includes(todoProvider),
+  ["offline", "anthropic", "ollama", "openai"].includes(todoProvider),
   todoProvider,
 );
+
+if (todoProvider === "openai") {
+  // Not a blocker: the key and model are also settable from the Taskline UI,
+  // so an empty environment is a valid starting state here.
+  const key = process.env.CEREBRAS_API_KEY ?? process.env.OPENAI_API_KEY;
+  console.log(
+    `${key ? "✓" : "·"} Hosted provider key (${
+      key ? "set" : "unset — paste one in the Taskline UI"
+    })`,
+  );
+  console.log(`· Hosted base URL (${process.env.OPENAI_BASE_URL ?? "https://api.cerebras.ai/v1"})`);
+}
 
 if (todoProvider === "ollama") {
   const ollamaUrl = (process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434").replace(

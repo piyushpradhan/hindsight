@@ -73,5 +73,12 @@ export type { AnthropicLike } from "./anthropic-provider.js";
 
 export { createOllamaProvider } from "./ollama-provider.js";
 
+export {
+  createOpenAiCompatProvider,
+  CEREBRAS_BASE_URL,
+  CEREBRAS_DEFAULT_MODEL,
+} from "./openai-provider.js";
+export type { OpenAiCompatOptions } from "./openai-provider.js";
+
 export { executeRunnerFork, SUPPORTED_MUTATIONS } from "./fork-runner.js";
 export type { DemoRunnerOptions } from "./fork-runner.js";

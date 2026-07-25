@@ -142,16 +142,33 @@ uses an invalid priority, opens a Hindsight incident, and links directly to the
 failed tool step so you can fork it with an overridden result.
 
 Taskline defaults to `HINDSIGHT_TODO_PROVIDER=offline`, a deterministic
-provider that needs no model and no key. To drive it with a real local model,
-install [Ollama](https://ollama.com) and switch providers in `.env`:
+provider that needs no model and no key.
+
+**To drive it with a real model, no install required:** click the provider pill
+in the Taskline header, choose **Hosted**, and paste an API key. The default
+target is [Cerebras](https://cloud.cerebras.ai) (`gpt-oss-120b`), whose free
+tier needs no credit card. Because the client speaks plain
+`/v1/chat/completions`, the same panel reaches Groq, OpenRouter, Together,
+Mistral, and Gemini's compatibility endpoint — change the base URL and model.
+
+A key pasted into that panel is held **in the Taskline process memory only**. It
+is never written to `.env` or SQLite, never returned to the browser, never
+recorded in a payload log, and is dropped when Taskline restarts. Redacted from
+provider error messages too. Set `CEREBRAS_API_KEY` in `.env` instead if you
+prefer a key that survives restarts.
+
+Taskline uses a JSON action protocol rather than native tool calls, so it never
+sends a `tools` array — only `response_format`. That is the portable path
+across vendors, several of which reject requests carrying both fields.
+
+For a local model instead, install [Ollama](https://ollama.com):
 
 ```bash
 ollama pull gemma3:1b
 ```
 
-Then set `HINDSIGHT_TODO_PROVIDER=ollama` and re-run `make demo`. Ollama's local
-API needs no key. Taskline uses a JSON action protocol because Gemma 3 1B does
-not expose native tool calls. `anthropic` plus `ANTHROPIC_API_KEY` also works.
+Then choose **Ollama** in the panel, or set `HINDSIGHT_TODO_PROVIDER=ollama` and
+re-run `make demo`. `anthropic` plus `ANTHROPIC_API_KEY` also works.
 
 To prove the complete local non-mock path, including verified incident
 resolution and `provider=ollama` evidence on the fork trace (requires the
