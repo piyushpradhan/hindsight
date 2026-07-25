@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hindsight × SigNoz — How it all fits together</title>
+<title>How Hindsight uses SigNoz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -93,16 +93,16 @@
 </div></nav>
 
 <header><div class="wrap">
-  <div class="eyebrow">Project explainer · SigNoz capabilities · how Hindsight is built on them</div>
+  <div class="eyebrow">Architecture notes · SigNoz signals · Hindsight data flow</div>
   <h1>Hindsight, on SigNoz</h1>
-  <p class="tagline"><strong>SigNoz is the observability platform. Hindsight is what we built on top of it.</strong> This page explains — in plain language, card by card — everything SigNoz can do, exactly which parts Hindsight uses, and how the whole system fits together.</p>
+  <p class="tagline"><strong>SigNoz stores the telemetry. Hindsight uses that data to replay and fork agent runs.</strong> This page maps the SigNoz features used by the project, then follows a run through the recorder, engine, and Studio.</p>
 </div></header>
 
 <!-- ============================ WHAT SIGNOZ IS ============================ -->
 <section id="what"><div class="wrap">
   <div class="sec-label">01 · The platform</div>
-  <h2>What SigNoz is &amp; everything it can do</h2>
-  <p class="sec-intro">SigNoz is an <strong>open-source, OpenTelemetry-native observability platform</strong> — one tool for traces, logs, and metrics (an open alternative to Datadog / New&nbsp;Relic). It stores everything in <strong>ClickHouse</strong>, a columnar database built for fast queries over huge volumes. Runs self-hosted (Docker/Kubernetes) or as a cloud service. Below is the full menu of what it offers; the green tag marks the parts Hindsight leans on.</p>
+  <h2>The parts of SigNoz that matter here</h2>
+  <p class="sec-intro">SigNoz is an <strong>open-source observability platform built on OpenTelemetry</strong>. It stores traces, logs, and metrics in <strong>ClickHouse</strong> and runs either on your own infrastructure or in SigNoz Cloud. Green tags mark the features Hindsight calls directly.</p>
 
   <div class="cards">
     <div class="card"><span class="tag">Signal · core</span><span class="load">used</span>
@@ -112,39 +112,39 @@
     </div>
     <div class="card"><span class="tag">Signal · core</span><span class="load">used</span>
       <h3><span class="ico">≡</span>Logs management</h3>
-      <p>Ingest, search, and filter structured logs. Log pipelines can parse and enrich. Crucially, logs are <b>correlated to traces</b> by <code>trace_id</code>/<code>span_id</code>, so a log record can be tied back to the exact span that produced it.</p>
+      <p>Ingest, search, and filter structured logs. Pipelines can parse or enrich them. A log carrying <code>trace_id</code> and <code>span_id</code> points back to the span that produced it.</p>
     </div>
     <div class="card"><span class="tag">Signal · core</span><span class="load">used</span>
       <h3><span class="ico">▲</span>Metrics</h3>
-      <p>Time-series counters, gauges, and histograms with labels. A query builder (plus PromQL / ClickHouse queries) turns them into panels — rates, percentiles (p95/p99), sums, and derived formulas.</p>
+      <p>Time-series counters, gauges, and histograms with labels. The query builder, PromQL, or ClickHouse queries can produce rates, p95/p99 percentiles, sums, and formulas.</p>
     </div>
     <div class="card"><span class="tag">Visualize</span><span class="load">used</span>
       <h3><span class="ico">▦</span>Dashboards</h3>
-      <p>Compose panels over any signal into custom dashboards. They're <b>config-as-code</b>: exportable/importable as JSON, so a repo can ship dashboards that light up the moment someone imports them.</p>
+      <p>Dashboards combine panels from any signal. SigNoz imports and exports them as JSON, so this repository can ship the exact dashboard definitions it expects.</p>
     </div>
     <div class="card"><span class="tag">React</span><span class="load">used</span>
       <h3><span class="ico">⚡</span>Alerts</h3>
-      <p>Rules on metrics/logs/traces — both <b>threshold</b> and <b>anomaly-based</b>. When one fires it hits a <b>notification channel</b>: webhook, Slack, email, PagerDuty, Opsgenie. The webhook is the hook Hindsight rides.</p>
+      <p>Threshold and anomaly rules can watch metrics, logs, or traces. A fired rule sends a notification through a webhook, Slack, email, PagerDuty, or Opsgenie; Hindsight uses the webhook.</p>
     </div>
     <div class="card"><span class="tag">Correlation</span><span class="load">used</span>
       <h3><span class="ico">⋈</span>One unified schema</h3>
-      <p>Traces, logs, and metrics share <b>one correlated schema on ClickHouse</b>. That single-store design is what lets Hindsight join a span back to its full-payload log in one query — the thing that makes replay possible.</p>
+      <p>Traces, logs, and metrics share a correlated schema in ClickHouse. Hindsight uses it to join a span with the log that holds its full payload.</p>
     </div>
     <div class="card"><span class="tag">Signal · derived</span>
       <h3><span class="ico">!</span>Exceptions &amp; errors</h3>
-      <p>Captured exceptions are grouped and tracked, with error rates surfaced per service and linked to the originating trace for root-cause.</p>
+      <p>SigNoz groups captured exceptions, tracks their rates per service, and links each error to its source trace.</p>
     </div>
     <div class="card"><span class="tag">Signal · derived</span>
       <h3><span class="ico">⧗</span>APM &amp; service health</h3>
-      <p>Out-of-the-box RED metrics (Rate, Errors, Duration) per service, latency percentiles, Apdex, and dependency maps — the standard application-performance view.</p>
+      <p>Built-in service views cover RED metrics (Rate, Errors, Duration), latency percentiles, Apdex, and dependency maps.</p>
     </div>
     <div class="card"><span class="tag">Query</span><span class="load">used</span>
       <h3><span class="ico">⌗</span>Query API</h3>
-      <p>A REST <code>query_range</code> API (v3/v4) with a builder-query language. Programs — like Hindsight's engine — query traces, logs, and metrics the same way the UI does. Auth via a role-scoped API key.</p>
+      <p>The REST <code>query_range</code> API (v3/v4) accepts builder queries. Hindsight's engine uses the same query shape as the SigNoz UI and authenticates with a role-scoped API key.</p>
     </div>
     <div class="card"><span class="tag">2026 · AI</span><span class="load stretch">stretch</span>
       <h3><span class="ico">◇</span>MCP server</h3>
-      <p>SigNoz's Model-Context-Protocol server lets an <b>LLM query your observability data</b> in natural language. Hindsight's optional "Diagnose" button would use it to propose a fix — garnish, not core.</p>
+      <p>SigNoz's Model Context Protocol server lets an <b>LLM query observability data</b>. A future Diagnose action could use it to suggest a fork mutation; the current replay path doesn't depend on it.</p>
     </div>
     <div class="card"><span class="tag">Deploy</span>
       <h3><span class="ico">⊞</span>Self-host or cloud</h3>
@@ -152,7 +152,7 @@
     </div>
     <div class="card"><span class="tag">Foundation</span>
       <h3><span class="ico">◎</span>OpenTelemetry-native</h3>
-      <p>No proprietary agent lock-in. SigNoz speaks OTel and its <b>semantic conventions</b> — including the <code>gen_ai.*</code> conventions for LLM calls that Hindsight follows for attribute hygiene.</p>
+      <p>SigNoz accepts OTel and its <b>semantic conventions</b>, including the <code>gen_ai.*</code> fields that Hindsight writes for model calls.</p>
     </div>
   </div>
 </div></section>
@@ -161,38 +161,38 @@
 <section id="pillars"><div class="wrap">
   <div class="sec-label">02 · The mapping</div>
   <h2>How Hindsight uses each part of SigNoz</h2>
-  <p class="sec-intro">SigNoz isn't a viewer bolted on the side — it's Hindsight's <strong>system of record</strong>. Every pillar is load-bearing: the traces <em>are</em> the runs, the logs <em>are</em> the payloads, the alerts <em>start</em> the workflow.</p>
+  <p class="sec-intro">Hindsight reads its evidence from SigNoz. Traces hold run structure, logs hold full payloads, metrics feed dashboards, and alerts open incidents.</p>
 
   <div class="cards">
     <div class="card pillar"><span class="tag">Pillar</span>
       <h3><span class="ico">⌇</span>Traces</h3>
-      <p>Every original agent run — <b>and every counterfactual fork</b> — is stored as one trace.</p>
+      <p>SigNoz stores each original run and each fork as its own trace.</p>
       <p class="role"><b>Why it matters:</b> a fully-recorded trace is a <b>checkpoint</b> you can re-execute. <b>Span links</b> tie each fork back to its original, so the lineage is visible inside SigNoz's own UI.</p>
     </div>
     <div class="card pillar"><span class="tag">Pillar</span>
       <h3><span class="ico">≡</span>Logs</h3>
       <p>Full LLM messages and tool inputs/outputs live as <b>trace-correlated log records</b> (marker <code>hindsight.payload</code>).</p>
-      <p class="role"><b>Why it matters:</b> span attributes have size limits and can't hold whole message arrays — so payloads go to logs, and the engine joins them back by <code>trace_id</code>. This is the data that makes replay possible at all.</p>
+      <p class="role"><b>Why it matters:</b> span attributes can't hold large message arrays. Payloads go to logs instead, and the engine joins them back by <code>trace_id</code>.</p>
     </div>
     <div class="card pillar"><span class="tag">Pillar</span>
       <h3><span class="ico">▲</span>Metrics</h3>
-      <p>Per-agent reliability, cost, tokens, latency, and a <b>loop score</b> — plus meta-metrics: incidents opened, forks run, MTTR.</p>
-      <p class="role"><b>Why it matters:</b> metrics feed the dashboards and the alert rules, and quantify Hindsight's own value (dollars saved by a fork vs a full re-run).</p>
+      <p>Metrics cover per-agent reliability, cost, tokens, latency, loop score, incidents, forks, and MTTR.</p>
+      <p class="role"><b>Why it matters:</b> the same values feed dashboards and alert rules, including the measured cost difference between a fork and a full run.</p>
     </div>
     <div class="card pillar"><span class="tag">Pillar</span>
       <h3><span class="ico">▦</span>Dashboards</h3>
       <p>Two dashboards ship as JSON in <code>infra/dashboards/</code>: <b>Agent Reliability</b> and <b>Hindsight Ops</b>.</p>
-      <p class="role"><b>Why it matters:</b> import them and a living fleet appears immediately — success rates, p95 latency, and the meta-story of incidents → forks → fixes.</p>
+      <p class="role"><b>Why it matters:</b> importing them shows success rate, p95 latency, opened incidents, attempted forks, and verified resolutions.</p>
     </div>
     <div class="card pillar"><span class="tag">Pillar</span>
       <h3><span class="ico">⚡</span>Alerts</h3>
       <p>Rules (error rate, loop score ≥ 3, latency/cost anomalies) fire a <b>webhook</b> into the engine at <code>/hooks/signoz</code>.</p>
-      <p class="role"><b>Why it matters:</b> this is the front door. SigNoz doesn't just <em>display</em> the failure — it <b>opens the case</b> as an incident, no human needed.</p>
+      <p class="role"><b>Why it matters:</b> the authenticated webhook gives Hindsight a trace ID and opens an incident without polling.</p>
     </div>
     <div class="card pillar"><span class="tag">Pillar · stretch</span>
       <h3><span class="ico">◇</span>MCP server</h3>
       <p>An LLM queries SigNoz through the MCP server to propose the fork mutation.</p>
-      <p class="role"><b>Why it matters:</b> a direct nod to SigNoz's newest feature — kept off the critical path so a demo never depends on it.</p>
+      <p class="role"><b>Why it matters:</b> it could shorten diagnosis, but the demo doesn't rely on it.</p>
     </div>
   </div>
 </div></section>
@@ -200,24 +200,24 @@
 <!-- ============================ THE PROJECT ============================ -->
 <section id="project"><div class="wrap">
   <div class="sec-label">03 · The idea</div>
-  <h2>The whole project, plainly</h2>
-  <p class="sec-intro"><strong>Hindsight is a flight recorder + time-travel debugger for AI agents.</strong> When an agent fails in production, today all you get is an autopsy — a waterfall of what already happened. Hindsight lets you <em>act on the past</em>: take a failed run, change exactly one thing, and re-execute from that moment to prove the fix. Four components make that work.</p>
+  <h2>What Hindsight adds</h2>
+  <p class="sec-intro"><strong>Hindsight records enough state to branch a failed agent run.</strong> Pick one step, change one input, and send the reconstructed state through the registered runner. Four components handle that path.</p>
 
   <div class="cards">
     <div class="card hindsight"><span class="tag">Component 1 · packages/recorder</span>
       <h3><span class="ico">●</span>The Recorder SDK</h3>
       <p>A thin wrapper (not a framework). An agent developer changes ~4 lines: <code>run.llm(...)</code> around a model call, <code>run.tool(...)</code> around a tool call.</p>
-      <p>Each becomes an OTel span. The <b>key trick:</b> spans carry metadata + hashes; the <b>full payloads go to logs</b>. Tokens, cost, latency, and loop score are emitted as metrics.</p>
+      <p>Each call becomes an OTel span. Spans carry metadata and hashes, while <b>full payloads go to logs</b>. The recorder emits tokens, cost, latency, and loop score as metrics.</p>
     </div>
     <div class="card hindsight"><span class="tag">Component 2 · apps/demo-agents</span>
       <h3><span class="ico">◑</span>The demo agents</h3>
-      <p>Two small agents — a <b>research</b> agent (web_search + calculator) and a <b>support-triage</b> agent (ticket_lookup) — plus a <code>CHAOS=</code> flag that injects realistic failures (malformed JSON, timeouts, tool loops).</p>
-      <p>A <b>seed script</b> runs ~30 mixed runs so the dashboards look alive instantly.</p>
+      <p>Two small agents cover research (<code>web_search</code> and calculator) and support triage (<code>ticket_lookup</code>). A <code>CHAOS=</code> flag injects malformed JSON, timeouts, or tool loops.</p>
+      <p>A <b>seed script</b> records roughly 30 mixed runs for the local dashboards.</p>
     </div>
     <div class="card hindsight"><span class="tag">Component 3 · apps/replay-engine</span>
       <h3><span class="ico">◭</span>The replay engine</h3>
       <p>A Fastify service that reads SigNoz back: a <b>query client</b>, a <b>RunGraph builder</b> (spans + payload logs → an ordered step list), a <b>fork executor</b>, a <b>diff/compare</b> computer, the <b>alert webhook</b>, and a postmortem generator.</p>
-      <p>It also instruments <em>itself</em> into the same SigNoz — dogfooding.</p>
+      <p>The service sends its own OTel data to the same SigNoz instance.</p>
     </div>
     <div class="card hindsight"><span class="tag">Component 4 · apps/studio</span>
       <h3><span class="ico">◧</span>The Studio UI</h3>
@@ -226,7 +226,7 @@
     </div>
   </div>
 
-  <div class="note"><b>The one clever bit worth understanding:</b> a trace normally can't be re-run because it doesn't store enough. Hindsight fixes that by recording <em>everything</em> — every message, every tool input/output — as trace-correlated logs. Once the trace holds the full state, a fully-recorded run becomes a <b>checkpoint</b>, and a checkpoint can be re-executed. That's the whole thesis.</div>
+  <div class="note"><b>The constraint:</b> an ordinary trace doesn't store enough state to run again. Hindsight records messages and tool I/O as trace-correlated logs. When every required payload is present and its hash matches, the engine treats the run as a <b>checkpoint</b>.</div>
 </div></section>
 
 <!-- ============================ DATA FLOW ============================ -->
@@ -265,49 +265,49 @@
 
   <div class="verbs">
     <div class="verb"><div class="n">Verb 1</div><h4>Record</h4>
-      <p>The SDK wraps every LLM and tool step into SigNoz — spans for structure, logs for full payloads, metrics for cost/latency/loops. <b>The trace becomes a checkpoint.</b></p>
+      <p>The SDK writes spans for structure, logs for full payloads, and metrics for cost, latency, and loops. <b>A complete recording becomes a checkpoint.</b></p>
     </div>
     <div class="verb"><div class="n">Verb 2</div><h4>Replay</h4>
-      <p>Pull any past run out of SigNoz, rebuild it as a RunGraph, and scrub it step-by-step in the UI — every message, every tool I/O, every token count. <b>Zero LLM cost.</b> VCR for agents.</p>
+      <p>The engine rebuilds a RunGraph from SigNoz. Studio shows every message, tool input, tool output, and token count without making a model call.</p>
     </div>
     <div class="verb"><div class="n">Verb 3</div><h4>Fork</h4>
-      <p>Pick a step, change <b>exactly one</b> thing (override a tool output, swap the model, edit the prompt, disable a tool). Re-execute from there; unchanged tools are mocked from the recording. A new, span-linked trace proves the outcome.</p>
+      <p>Pick a step, change <b>exactly one</b> thing (override a tool output, swap the model, edit the prompt, disable a tool). Re-execute from there; the runner replays unchanged tools from the recording. A new, span-linked trace proves the outcome.</p>
     </div>
   </div>
 
-  <div class="note"><b>The incident loop that glues it together:</b> a SigNoz <b>alert</b> fires → webhook auto-creates an <b>incident</b> in the inbox → a human scrubs the timeline and spots the poisoned step → <b>forks</b> it with one fix → the compare view shows <em>failed → passed</em>, and the incident is marked resolved-via-fork. One click generates a postmortem with deep links to both traces.</div>
+  <div class="note"><b>The incident path:</b> a SigNoz alert calls the webhook, the engine opens an incident for that trace, and an engineer tests one change. Hindsight resolves the incident only when the linked fork passes its verification checks. The postmortem links both traces.</div>
 </div></section>
 
 <!-- ============================ REAL VS MOCK ============================ -->
 <section id="data"><div class="wrap">
   <div class="sec-label">06 · Honesty</div>
   <h2>Are the runs you see real?</h2>
-  <p class="sec-intro">Yes — the runs are <strong>real telemetry in SigNoz</strong>, not hard-coded UI data. But it's worth being precise about what "real" means here.</p>
+  <p class="sec-intro">The default demo reads <strong>real telemetry from SigNoz</strong>. The agent's model response may still come from the deterministic offline provider.</p>
 
   <div class="cards">
     <div class="card"><span class="tag">Real</span><span class="load">live</span>
       <h3><span class="ico">✓</span>The telemetry is real</h3>
-      <p>Every run in the list is a genuine OTel trace in SigNoz's ClickHouse, produced by the <b>seed script</b> running the demo agents through the recorder. Real spans, real payload logs, real metrics — queried back by the engine.</p>
+      <p>The seed script runs the demo agents through the recorder. Their spans, payload logs, and metrics land in SigNoz, then the engine queries them back.</p>
     </div>
     <div class="card"><span class="tag">Simulated</span>
       <h3><span class="ico">◑</span>The "brain" is deterministic</h3>
-      <p>There's no live Claude/GPT here (no API key), so the agents use a <b>deterministic mock LLM</b> at temperature 0. The intelligence is scripted — but the <b>record → store → replay → fork</b> pipeline is 100% real. Swap in a real model SDK and nothing else changes.</p>
+      <p>Without an API key, the agents use a <b>deterministic offline provider</b> at temperature 0. The provider scripts the answers; recording, storage, replay, and fork execution still use the running services.</p>
     </div>
     <div class="card"><span class="tag">Off by default</span>
       <h3><span class="ico">◧</span>UI mock exists, but is opt-in</h3>
-      <p>The Studio has a fixture set for offline design work. It's <b>OFF unless</b> you open the app with <code>?mock=1</code>, which shows a "mock data" pill in the header. No pill = real SigNoz data. There is <b>no silent fallback</b> — if the engine is down, the UI errors rather than faking data.</p>
+      <p>Studio also has fixtures for offline design work. They stay off unless the URL contains <code>?mock=1</code>, which adds a fixture-data pill to the header. If the engine is down in normal mode, Studio shows the error.</p>
     </div>
     <div class="card"><span class="tag">Why simulate?</span>
       <h3><span class="ico">◎</span>Deterministic on purpose</h3>
-      <p>A scripted agent means the demo <b>can't faceplant live</b> and a fork's result is reproducible — the same failure every time, the same fix every time. That's a feature for a debugger, not a shortcut.</p>
+      <p>The offline provider makes the failure and fork result repeatable. Set the provider to Ollama or Anthropic to run the same path with a model.</p>
     </div>
   </div>
 
-  <div class="note blue"><b>One-line summary:</b> the agents' thinking is faked so the demo is reliable; everything SigNoz stores and everything Hindsight does with it — recording, querying, replaying, forking, comparing — is genuinely happening against a live SigNoz instance.</div>
+  <div class="note blue"><b>In short:</b> the offline provider scripts the agent responses. SigNoz storage, engine queries, checkpoint checks, fork execution, and comparison still happen in the running stack.</div>
 </div></section>
 
 <footer><div class="wrap">
-  HINDSIGHT × SIGNOZ · project explainer · <b>SigNoz = the observability platform (system of record); Hindsight = replay + fork built on top of it</b> · fork the past, fix the future
+  HINDSIGHT × SIGNOZ · <b>SigNoz stores the evidence; Hindsight replays and forks it.</b>
 </div></footer>
 
 </body>

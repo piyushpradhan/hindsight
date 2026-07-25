@@ -118,7 +118,7 @@ export function CompareScreen() {
   if (!original || !fork) {
     return (
       <div className="page">
-        <ErrorNote error={new Error("missing query params — expected /compare?original=TRACE&fork=TRACE")} />
+        <ErrorNote error={new Error("missing query params; expected /compare?original=TRACE&fork=TRACE")} />
       </div>
     );
   }
@@ -153,7 +153,7 @@ export function CompareScreen() {
         <div className="eyebrow">Counterfactual comparison</div>
         <h1>Compare outcomes</h1>
         <p className="page-sub">
-          See exactly what changed when Hindsight tested one alternate path.
+          The original and fork are aligned by step, with the changed fields called out below.
         </p>
       </div>
 

@@ -23,7 +23,7 @@ export function FleetStrip() {
       <div className="fleet-strip">
         <span
           className="fleet-chip faint-chip"
-          title="GET /api/fleet failed — replay-engine or SigNoz unavailable"
+          title="GET /api/fleet failed. replay-engine or SigNoz is unavailable."
         >
           fleet unavailable
         </span>

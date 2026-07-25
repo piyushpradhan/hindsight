@@ -5,20 +5,19 @@ export function LandingPage() {
     <div className="landing">
       <section className="landing-hero" id="product">
         <div className="hero-copy">
-          <div className="eyebrow"><span className="status-pulse" /> Agent replay control</div>
-          <h1>Find the failure.<br />Prove the fix.</h1>
+          <div className="eyebrow"><span className="status-pulse" /> Replay failed runs</div>
+          <h1>Run failed?<br />Test a change.</h1>
           <p>
-            Hindsight turns recorded agent runs into safe, testable branches. Inspect the failure,
-            change one variable, and compare the outcome without rewriting the original trace.
+            Hindsight rebuilds an agent run from SigNoz and lets you change one recorded step.
+            Your runner executes the branch; the source trace never changes.
           </p>
           <div className="hero-actions">
             <Link className="btn btn-light" to="/incidents">Open incident queue</Link>
             <Link className="ghost-link" to="/runs">Browse recordings <span aria-hidden="true">→</span></Link>
           </div>
           <div className="hero-footnote">
-            <span>OpenTelemetry evidence</span>
-            <span>SigNoz-native</span>
-            <span>Side-effect safe</span>
+            <span>Reads from SigNoz</span>
+            <span>Source trace untouched</span>
           </div>
         </div>
 
@@ -79,11 +78,11 @@ export function LandingPage() {
 
       <section className="landing-section" id="workflow">
         <div className="section-intro">
-          <div className="eyebrow">One controlled branch</div>
-          <h2>Debug the cause,<br />not the transcript.</h2>
+          <div className="eyebrow">One variable at a time</div>
+          <h2>Start at the step<br />that broke.</h2>
           <p>
-            Every decision stays attached to the recorded evidence. Hindsight gives your team a
-            short path from alert to verified change.
+            The request, response, tool data, cost, and latency stay attached to each step. Pick
+            one, make a change, and run the branch.
           </p>
         </div>
         <div className="workflow-stack">
@@ -113,7 +112,7 @@ export function LandingPage() {
             <span className="workflow-index">03 / VERIFY</span>
             <div>
               <h3>Compare the outcome</h3>
-              <p>Review aligned steps and deltas, then keep the successful branch as proof.</p>
+              <p>Review the aligned steps and deltas. A passing branch stays linked to the failure.</p>
             </div>
             <div className="workflow-evidence positive">
               <span>VERDICT</span>
@@ -142,11 +141,11 @@ export function LandingPage() {
           </div>
         </div>
         <div className="evidence-copy">
-          <div className="eyebrow">Proof over intuition</div>
-          <h2>A fix you can defend.</h2>
+          <div className="eyebrow">Keep the receipts</div>
+          <h2>See what changed<br />and what it cost.</h2>
           <p>
-            Hindsight keeps the original run immutable and makes the branch legible. Your incident
-            closes with evidence, not a guess.
+            The original and fork stay side by side, including cost, tokens, steps, and latency.
+            The incident closes only after the branch passes the engine's checks.
           </p>
           <Link className="ghost-link" to="/incidents">Review the incident queue <span aria-hidden="true">→</span></Link>
         </div>
@@ -154,8 +153,8 @@ export function LandingPage() {
 
       <section className="landing-cta">
         <div>
-          <div className="eyebrow"><span className="status-pulse" /> Replay is ready</div>
-          <h2>Start with the failure<br />already in front of you.</h2>
+          <div className="eyebrow"><span className="status-pulse" /> Failed run in hand?</div>
+          <h2>Open it and test<br />one change.</h2>
         </div>
         <Link className="btn btn-dark" to="/incidents">Open Hindsight</Link>
       </section>
@@ -166,7 +165,7 @@ export function LandingPage() {
             <img src="/favicon.svg" alt="" />
             HINDSIGHT
           </span>
-          <p>Flight recorder and replay control for AI agents.</p>
+          <p>Record an agent run. Fork it when it fails.</p>
         </div>
         <nav aria-label="Footer navigation">
           <a href="#product">Product</a>

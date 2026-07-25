@@ -186,19 +186,19 @@ export function IncidentsScreen() {
     <div className="page incidents-page">
       <div className="page-head incidents-head">
         <div className="incidents-head-copy">
-          <div className="eyebrow">Start here</div>
-          <h1>Resolve an agent failure</h1>
+          <div className="eyebrow">Incident queue</div>
+          <h1>Pick a failure to investigate</h1>
           <p className="page-sub">
-            Choose an open incident below. Hindsight preserves the original run while you test and
-            verify a fix.
+            Open an incident, find the bad step, and test one change. Hindsight leaves the original
+            run alone.
           </p>
         </div>
       </div>
 
       <section className="workflow-guide" aria-labelledby="workflow-title">
         <div className="workflow-copy">
-          <h2 id="workflow-title">Your path to a verified fix</h2>
-          <p>Follow the failure from recorded evidence to a tested outcome.</p>
+          <h2 id="workflow-title">How a fix gets verified</h2>
+          <p>Inspect the run, change one variable, then compare the branch with the original.</p>
         </div>
         <ol className="workflow-steps">
           <li>
@@ -238,7 +238,7 @@ export function IncidentsScreen() {
           <div className="queue-head">
             <div>
               <h2>Incident queue</h2>
-              <p>Open incidents need a tested fix. Resolved incidents keep the proof.</p>
+              <p>Open incidents still need a test. Resolved ones keep the passing fork attached.</p>
             </div>
             <div className="queue-tools">
               <span className="queue-count">

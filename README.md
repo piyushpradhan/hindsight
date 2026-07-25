@@ -1,34 +1,39 @@
 # Hindsight
 
-**A flight recorder for AI agents.** Record a run, replay its captured evidence
-without live calls, and fork a complete checkpoint through the agent's
-registered runtime — with [SigNoz](https://signoz.io) as the system of record.
+**A flight recorder for AI agents.** Hindsight records each run in
+[SigNoz](https://signoz.io), replays the captured evidence without live calls,
+and sends complete checkpoints back through the agent's registered runtime.
 
 ![Hindsight turns a recorded failure into a testable branch](docs/assets/hindsight-landing.png)
 
 ---
 
-## The problem: traces are autopsies
+## A trace can't test a fix
 
-When an agent misbehaves, the usual observability stack tells you *that* it failed and roughly *where* — after the fact, on a corpse. A trace is an autopsy: read-only, past-tense, and missing the one thing you actually want, which is to change one input and see what *would have* happened.
+An ordinary trace shows where a run failed, but it can't answer the next
+question: what would have happened if that tool result, prompt, model, or
+response setting had changed?
 
-Agents make this worse. They loop. They burn tokens. They call the wrong tool, then apologize, then call it again. The failure is rarely a single bad span — it's a *path*, and you can't re-walk the path from a flat trace.
+Agent failures often span several steps. A bad tool result can trigger a retry
+loop, burn tokens, and leave the final response unusable. Reading those spans
+explains the failure; it doesn't run the corrected path.
 
-Hindsight turns the autopsy into a time machine: the same telemetry that records the run also lets you **re-run it, and branch it.**
+Hindsight records enough state to replay the run or branch from one step while
+keeping the original trace intact.
 
 ---
 
 ## Three verbs: Record · Replay · Fork
 
-- **Record** — Agents emit versioned OpenTelemetry spans, correlated payload and
-  event logs, and fleet metrics. Payload capture can be `off`, `redacted`, or
-  `full`; byte limits, hashes, and completeness are recorded explicitly.
-- **Replay** — The engine traverses recorded responses only. It performs zero
+- **Record:** Agents emit versioned OpenTelemetry spans, correlated payload and
+  event logs, and fleet metrics. Payload capture supports `off`, `redacted`, or
+  `full`; the recorder also writes byte limits, hashes, and completeness.
+- **Replay:** The engine traverses recorded responses only. It performs zero
   provider or tool calls and rejects an incomplete, redacted, truncated, or
   tampered checkpoint.
-- **Fork** — A configured runner reconstructs state before the branch, applies
+- **Fork:** A configured runner reconstructs state before the branch, applies
   exactly one supported mutation, then runs the real agent loop. Recorded tools
-  are matched by name, normalized arguments, and occurrence. Side-effecting
+  match by name, normalized arguments, and occurrence. Side-effecting
   tools never run live.
 
 ---
@@ -47,7 +52,7 @@ Hindsight turns the autopsy into a time machine: the same telemetry that records
                                     (:5173)  agent runner (:4124)
 ```
 
-### SigNoz as the system of record — pillar map
+### SigNoz as the system of record
 
 SigNoz holds run evidence. The replay-engine's SQLite database holds only
 operational state: incidents, alert deduplication, fork attempts, verification,
@@ -64,8 +69,8 @@ and measured resolution time.
 
 ## Quickstart
 
-Requirements: Docker, Node, and pnpm. A self-hosted SigNoz stack is vendored in
-this repository under `pours/deployment/`, so a clean checkout needs three
+Requirements: Docker, Node, and pnpm. This repository includes a self-hosted
+SigNoz stack under `pours/deployment/`, so a clean checkout needs three
 commands:
 
 ```bash
@@ -107,7 +112,7 @@ An incident appears only when an installed trace-correlated SigNoz rule
 delivers an authenticated webhook. Hindsight never inserts a fake incident in
 the main demo path.
 
-**The incident list is empty right after `make demo` — give it about three
+**The incident list is empty right after `make demo`; give it about three
 minutes.** The seeded failures are already in SigNoz, but the rules evaluate on
 a schedule (`frequency: 30s` over a `1m` window) and ingestion adds its own lag,
 so nothing reaches `/hooks/signoz` until the first evaluation covers those runs.
@@ -115,11 +120,11 @@ On a verified run, four seeded failures produced four incidents a little over
 three minutes after seeding finished. An empty list before then is the pipeline
 working, not a broken install.
 
-The JSON under `infra/` is versioned source configuration. Repository copies
+The JSON under `infra/` holds versioned source configuration. Repository copies
 remain marked `template_uninstalled`; `make provision` strips that
 template-only metadata and installs missing resources through the tested
-SigNoz API. Existing resources are detected by their stable names, and known
-channel drift is corrected without duplicating them. Use
+SigNoz API. The provisioner finds existing resources by their stable names and
+corrects known channel drift without duplicating them. Use
 `make provision-dry-run` to inspect the plan. SigNoz v0.133 requires every rule
 to have a channel, so the fleet-only cost and latency rules use the same
 authenticated webhook sink. The engine acknowledges those aggregate
@@ -130,7 +135,7 @@ Other targets: `make up` (start stack), `make seed` (demo data), `make dev`
 
 ### Live SigNoz evidence
 
-The repository's demo recorder has been verified against SigNoz EE v0.133.0.
+We verified the repository's demo recorder against SigNoz EE v0.133.0.
 The captures below show real OTLP data, not fixture UI.
 
 ![Hindsight metrics ingested by SigNoz](docs/assets/signoz-metrics.png)
@@ -169,9 +174,9 @@ resolution and `provider=ollama` evidence on the fork trace (requires the
 pnpm --filter @hindsight/demo-agents verify:ollama
 ```
 
-The command exits non-zero unless Taskline is using Ollama, the fork is linked
-and verified, the incident resolves, and no fork LLM step reports the mock
-provider.
+The command exits non-zero unless Taskline uses Ollama, the fork carries valid
+lineage and verification, the incident resolves, and every fork LLM step
+reports a non-mock provider.
 
 ---
 
@@ -195,7 +200,7 @@ The exact three-minute recording path is in
 
 ## Design decisions
 
-- **Payload-as-logs.** Span attributes have practical size limits, so full LLM messages and tool I/O are written as OTel *log records* correlated by `trace_id`/`span_id`. Spans stay cheap and queryable; payloads stay complete. See `packages/shared/src/telemetry.ts` and `apps/replay-engine/src/signoz/client.ts`.
+- **Payloads live in logs.** Span attributes have practical size limits, so full LLM messages and tool I/O are written as OTel *log records* correlated by `trace_id`/`span_id`. Spans stay cheap and queryable; payloads stay complete. See `packages/shared/src/telemetry.ts` and `apps/replay-engine/src/signoz/client.ts`.
 - **Replay and fork are distinct.** Replay is data-only. Forking calls a
   configured runtime; strict mode rejects an unrecorded tool dependency, while
   hybrid mode may run only tools the runner declares safe.
@@ -222,8 +227,8 @@ The exact three-minute recording path is in
   mismatched, or expired payload logs fail closed; they never fall through to
   live execution.
 - **Provisioned JSON is version-specific.** The `infra/` config targets SigNoz EE ~v0.133.0. On other versions, validate on import (each file carries a note).
-- **Payload retention matters.** Payload logs must be retained at least as long
-  as the traces operators expect to replay or fork. Full capture may contain
+- **Payload retention matters.** Keep payload logs at least as long as the
+  traces operators expect to replay or fork. Full capture may contain
   sensitive data and increases log storage; redacted capture is safer but may
   intentionally make a checkpoint non-forkable.
 - **Only registered revisions can fork.** Configure agent ID → runner URL and
@@ -240,6 +245,6 @@ The exact three-minute recording path is in
 
 ## AI assistance disclosure
 
-AI coding assistants were used during implementation, testing, design review,
-and documentation. Architecture, product decisions, integration verification,
-and the submitted result were reviewed and owned by the project author.
+The project author used AI coding assistants during implementation, testing,
+design review, and documentation. The author made the architecture and product
+decisions, verified the integration, and reviewed the submitted result.

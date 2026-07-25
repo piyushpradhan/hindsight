@@ -102,8 +102,8 @@ export function RunsScreen() {
         <div className="eyebrow">Recording archive</div>
         <h1>All agent runs</h1>
         <p className="page-sub">
-          Browse every recording from SigNoz. To investigate and resolve a failure, start in the
-          incident queue.
+          These recordings come from SigNoz. If you're working a failure, open it from the incident
+          queue so the fork stays tied to the case.
         </p>
       </div>
 

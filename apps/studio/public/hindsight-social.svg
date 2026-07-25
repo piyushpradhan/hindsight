@@ -9,7 +9,7 @@
   <text x="92" y="245" fill="#eeeeee" font-family="Arial, Helvetica, sans-serif" font-size="78" letter-spacing="-2">Hindsight</text>
   <text x="96" y="294" fill="#8a8380" font-family="monospace" font-size="17" letter-spacing="2">FLIGHT RECORDER FOR AI AGENTS</text>
   <path d="M96 358h1008" stroke="#3d3a39"/>
-  <text x="96" y="430" fill="#eeeeee" font-family="Arial, Helvetica, sans-serif" font-size="34">Trace the cause. Test the change. Keep the proof.</text>
+  <text x="96" y="430" fill="#eeeeee" font-family="Arial, Helvetica, sans-serif" font-size="34">A run failed. Test one recorded change.</text>
   <circle cx="98" cy="517" r="5" fill="#ee6018"/>
-  <text x="118" y="524" fill="#b8b3b0" font-family="monospace" font-size="17">RECORDED EVIDENCE → CONTROLLED BRANCH → VERIFIED FIX</text>
+  <text x="118" y="524" fill="#b8b3b0" font-family="monospace" font-size="17">SIGNOZ RECORDING → LINKED FORK</text>
 </svg>

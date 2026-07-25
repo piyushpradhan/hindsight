@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hindsight — Workflows</title>
+<title>Hindsight workflows</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -101,7 +101,7 @@
 <header><div class="wrap">
   <div class="eyebrow">Agents of SigNoz · AI &amp; Agent Observability · Workflows v1</div>
   <h1>Workflows</h1>
-  <p class="tagline"><strong>Every way you use Hindsight.</strong> Three verbs — Record, Replay, Fork — wrapped by an incident loop that turns a SigNoz alert into a proven fix. Each workflow below is standalone and demoable.</p>
+  <p class="tagline"><strong>Eight paths through Hindsight.</strong> They cover recording, replay, forks, incident handling, comparison, postmortems, and fleet monitoring. Each section names its input and output.</p>
   <div class="toc">
     <a href="#record"><div class="n">WF 01</div><div class="t">Record a run</div><div class="d">Instrument an agent in ~4 lines; every step becomes a trace.</div></a>
     <a href="#replay"><div class="n">WF 02</div><div class="t">Replay a run</div><div class="d">Scrub any past run step-by-step. Zero LLM cost.</div></a>
@@ -134,37 +134,37 @@
 <span class="kw">const</span> results = <span class="kw">await</span> run.tool(<span class="st">"web_search"</span>, args, () =&gt; webSearch(args));
 
 run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// or "failure" | "timeout"</span></code></pre>
-  <div class="note"><b>Why it matters:</b> spans carry metadata + hashes (attribute size limits are real); full messages live as correlated logs. SigNoz's unified ClickHouse schema joins them back in one query — that join is what makes replay possible.</div>
+  <div class="note"><b>Why it matters:</b> span attributes have size limits, so spans carry metadata and hashes while correlated logs hold full messages. The engine joins them through SigNoz's ClickHouse schema.</div>
 </div></section>
 
 <section id="replay"><div class="wrap">
   <div class="sec-label">WF 02</div>
   <h2>Replay a run</h2>
   <div class="who">Actor: on-call engineer · Precondition: a trace_id · Output: a scrubbable timeline · Cost: $0.00</div>
-  <p class="lead">VCR mode for agents. Pull a historical run out of SigNoz, rebuild it as a RunGraph, and step through the whole thing — no model calls, no re-triggered side effects.</p>
+  <p class="lead">Pull a historical run from SigNoz and rebuild it as a RunGraph. You can inspect the recording step by step without calling a model or running a tool.</p>
   <ol class="steps">
     <li>Paste a <code>trace_id</code> (or open an incident from the inbox).</li>
     <li>Engine fetches spans by trace_id + correlated payload logs, normalizes to an ordered step list.</li>
     <li>Scrub the horizontal step timeline; each step expands to its transcript, tool I/O, and token/cost/latency badges.</li>
-    <li>Land on the failing step — it glows ember — and read exactly what the model saw.</li>
+    <li>The failing step opens by default, with the request and recorded result in view.</li>
   </ol>
 <pre><code><span class="cm"># RunGraph step shape</span>
 { index: <span class="st">6</span>, kind: <span class="st">"tool"</span>, tool: <span class="st">"web_search"</span>,
   request: {…}, response: <span class="st">"&lt;malformed JSON&gt;"</span>,
   tokens: { in: <span class="st">1204</span>, out: <span class="st">88</span> }, cost: <span class="st">0.003</span>, latencyMs: <span class="st">412</span>,
   error: <span class="st">"tool_output_parse_error"</span> }</code></pre>
-  <div class="note"><b>Stop here and you still ship something:</b> a read-only "flight recorder for agents." But a recorder without the fork is just another trace viewer.</div>
+  <div class="note"><b>Replay is read-only.</b> It explains the recorded path; the fork workflow below tests a different one.</div>
 </div></section>
 
 <section id="fork"><div class="wrap">
   <div class="sec-label">WF 03</div>
-  <h2>Fork a run — the signature move</h2>
+  <h2>Fork a run</h2>
   <div class="who">Actor: engineer diagnosing a failure · Precondition: a replayed run · Output: a span-linked counterfactual trace</div>
-  <p class="lead">Pick any step. Change exactly one variable. Re-execute live from that state — unchanged tools are mocked from the recording. The counterfactual emits a new trace, span-linked to the original.</p>
+  <p class="lead">Pick a step and change one variable. The runner reconstructs state before that point, applies the mutation, and writes the branch as a new trace linked to the original.</p>
   <ol class="steps">
     <li>Select the step to fork from (e.g. step 6, the poisoned tool output).</li>
     <li>Apply one <b>mutation</b> (table below).</li>
-    <li>Pick a <b>mock policy</b> — how tool calls behave during re-execution.</li>
+    <li>Pick a <b>mock policy</b> for tool calls during re-execution.</li>
     <li>Run. Engine rebuilds conversation state up to step k, applies the mutation, re-runs live from there.</li>
   </ol>
   <h3>Mutation types (change exactly one)</h3>
@@ -180,28 +180,28 @@ run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// o
   <table>
     <tr><th>Mode</th><th>Behavior</th></tr>
     <tr><td>strict</td><td>All tools answered from recordings (args-hash match). Unmatched call → fail fast. Pure test of the model's reasoning.</td></tr>
-    <tr><td>hybrid <span style="color:var(--ember)">(default)</span></td><td>Hash match → mock. No match → run live if tool is flagged safe; side-effectful tools (send, write, pay) return a dry-run stub.</td></tr>
+    <tr><td>hybrid <span style="color:var(--ember)">(default)</span></td><td>Hash match → mock. No match → run live if the runner declares the tool safe; side-effectful tools (send, write, pay) return a dry-run stub.</td></tr>
     <tr><td>live</td><td>Everything live; side-effectful tools still gated behind a confirm.</td></tr>
   </table>
-  <div class="note"><b>Safety:</b> side-effectful tools return dry-run stubs unless explicitly confirmed — that email won't send twice. Lineage is a real OTel span link, so the fork is visible inside SigNoz's own UI via <code>hindsight.fork.of</code>.</div>
+  <div class="note"><b>Safety:</b> side-effecting tools never run live. Lineage uses an OTel span link, so SigNoz can show the fork beside its source through <code>hindsight.fork.of</code>.</div>
 </div></section>
 
 <section id="incident"><div class="wrap">
   <div class="sec-label">WF 04</div>
-  <h2>Incident loop — SigNoz opens the case</h2>
+  <h2>Incident loop</h2>
   <div class="who">Actor: nobody (automated) · Trigger: a SigNoz alert rule · Output: an incident in the inbox, ready to replay</div>
-  <p class="lead">The front door of the whole product. An alert doesn't just display a problem — it initiates the fix.</p>
+  <p class="lead">A SigNoz alert calls the engine with a trace-correlated event. The engine verifies the webhook, deduplicates it, and opens an incident.</p>
   <ol class="steps">
     <li>A provisioned alert rule trips (see triggers below).</li>
     <li>SigNoz fires a webhook to <code>POST /hooks/signoz</code>; labels carry <code>agent.id</code>.</li>
-    <li>Engine resolves the offending trace and creates an <b>Incident</b> (stored in SQLite — rebuildable from SigNoz).</li>
-    <li>The incident appears in the Studio inbox with severity, agent, and age — frozen and ready to replay.</li>
+    <li>The engine resolves the trace and creates an <b>Incident</b> in SQLite.</li>
+    <li>Studio shows the incident with its severity, agent ID, age, and source trace.</li>
   </ol>
   <table>
     <tr><th>Alert rule</th><th>Trigger</th></tr>
     <tr><td>Run failures</td><td>error rate &gt; 20% over 5m, per agent (threshold)</td></tr>
-    <tr><td>Loop tripwire</td><td><code>loop.score ≥ 3</code> — fires immediately (the demo's trigger)</td></tr>
-    <tr><td>Latency drift</td><td>p95 step.duration — SigNoz anomaly alert</td></tr>
+    <tr><td>Loop tripwire</td><td><code>loop.score ≥ 3</code>; this is the demo trigger</td></tr>
+    <tr><td>Latency drift</td><td>SigNoz anomaly alert on p95 step duration</td></tr>
     <tr><td>Cost spike</td><td>cost-per-run anomaly, per agent</td></tr>
   </table>
 </div></section>
@@ -210,19 +210,19 @@ run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// o
   <div class="sec-label">WF 05 · stretch</div>
   <h2>Diagnose with the SigNoz MCP server</h2>
   <div class="who">Actor: engineer who wants a head start · Precondition: an open incident · Output: a proposed fork mutation</div>
-  <p class="lead">Hit "Diagnose." An LLM queries SigNoz through its MCP server, reads the run, and proposes the mutation to fork with — you accept, tweak, or ignore it.</p>
+  <p class="lead">Diagnose would let an LLM query the run through SigNoz's MCP server and suggest a fork point plus mutation. This remains outside the current demo path.</p>
   <ol class="steps">
     <li>Open an incident and click <b>Diagnose</b>.</li>
     <li>The LLM pulls the run's spans/logs via the SigNoz MCP server.</li>
     <li>It returns a suggested fork point + mutation ("override step 6 tool output; it's malformed JSON").</li>
-    <li>Pre-fills the fork panel — you stay in control of the actual run.</li>
+    <li>It pre-fills the fork panel; the engineer still starts the run.</li>
   </ol>
-  <div class="note"><b>Keep it off the critical path.</b> This is garnish: first thing to cut if time runs out. Its value is the name-drop of SigNoz's flagship 2026 feature, not the demo's spine.</div>
+  <div class="note"><b>Status:</b> this workflow is a stretch item. Record, replay, fork, and compare work without it.</div>
 </div></section>
 
 <section id="compare"><div class="wrap">
   <div class="sec-label">WF 06</div>
-  <h2>Compare &amp; verify — prove the fix</h2>
+  <h2>Compare and verify</h2>
   <div class="who">Actor: engineer · Precondition: original + fork traces · Output: a verdict, and a resolved incident</div>
   <p class="lead">Two timelines, aligned. A diff computer matches steps (LCS on kind + tool name + args hash) and computes the deltas that matter.</p>
   <div class="verdict-card">
@@ -239,17 +239,17 @@ run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// o
   </div>
   <ul>
     <li>Verdict card up top: outcome change, Δcost, Δtokens, Δsteps, plus a text diff of final outputs.</li>
-    <li>"Open both traces in SigNoz" — span-linked, so lineage is inspectable in the judges' own product.</li>
-    <li>If the fork passes where the original failed, the incident is marked <b>resolved-via-fork</b>.</li>
+    <li>Links open both traces in SigNoz, where the span link exposes their lineage.</li>
+    <li>If the fork passes where the original failed, the engine marks the incident <b>resolved-via-fork</b>.</li>
   </ul>
-  <div class="note"><b>The line:</b> "We didn't guess the fix. We proved it, for nine cents." Optional stretch: an LLM-as-judge one-liner verdict; plain text diff is fine without it.</div>
+  <div class="note"><b>Verification rule:</b> a successful fork isn't enough by itself. The engine also checks lineage, mutation evidence, and the absence of the original failure.</div>
 </div></section>
 
 <section id="postmortem"><div class="wrap">
   <div class="sec-label">WF 07</div>
   <h2>Generate a postmortem</h2>
   <div class="who">Actor: engineer closing the incident · Precondition: a resolved fork · Output: a markdown incident review</div>
-  <p class="lead">One click. Template + run data → a markdown postmortem with deep links to both traces. The incident review writes itself.</p>
+  <p class="lead">The engine fills a markdown template with incident data, measured deltas, and links to both traces.</p>
 <pre><code><span class="cm">## Incident 2026-07-22-researcher-loop</span>
 
 <span class="kw">**What failed:**</span> web_search returned malformed JSON at step 6 → retry loop
@@ -260,18 +260,18 @@ run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// o
 <span class="kw">**Result:**</span> 4 steps, $0.09, PASSED. <span class="cm">[fork trace 3c1d…](signoz://…)</span>
 
 <span class="kw">**Deltas:**</span>  -10 steps · -$0.32 · outcome FAILED → PASSED</code></pre>
-  <div class="note"><b>Scope note:</b> a static markdown template with links is 80% of the value — this is the second thing to cut under deadline pressure, not the first.</div>
+  <div class="note"><b>Implementation:</b> this uses a fixed template. It doesn't call a model.</div>
 </div></section>
 
 <section id="fleet"><div class="wrap">
   <div class="sec-label">WF 08</div>
   <h2>Fleet monitoring</h2>
-  <div class="who">Actor: anyone watching the fleet · Precondition: agents recording · Output: living dashboards + the meta-story</div>
-  <p class="lead">The ambient workflow behind all the others. Provisioned-as-JSON dashboards and metrics that quantify both agent health and Hindsight's own value.</p>
+  <div class="who">Actor: fleet operator · Precondition: agents recording · Output: dashboards and alert evaluations</div>
+  <p class="lead">Versioned dashboard JSON reports agent health and Hindsight's incident-to-resolution measurements.</p>
   <h3>Two dashboards (shipped as JSON in the repo)</h3>
   <ul>
-    <li><b>Agent Reliability:</b> success rate, incident count, p95 latency, tool error rate — per agent.</li>
-    <li><b>Hindsight Ops:</b> the meta-dashboard — incidents opened, forks run, <b>MTTR-for-agents</b> (created → resolved-via-fork), and "$ saved by fork vs full re-run."</li>
+    <li><b>Agent Reliability:</b> success rate, incident count, p95 latency, and tool error rate per agent.</li>
+    <li><b>Hindsight Ops:</b> incidents opened, forks run, time from creation to verified resolution, and the measured cost difference between a fork and full re-run.</li>
   </ul>
   <h3>Key metrics</h3>
   <table>
@@ -280,13 +280,13 @@ run.end({ outcome: <span class="st">"success"</span> });   <span class="cm">// o
     <tr><td>cost.usd.total</td><td>{agent, model} → cost panels + anomaly alert</td></tr>
     <tr><td>step.duration</td><td>{kind} → p95 latency + anomaly alert</td></tr>
     <tr><td>loop.score</td><td>repeated (tool, args.hash) in last N steps; ≥3 = looping</td></tr>
-    <tr><td>incidents / forks / forks.resolved</td><td>the meta-story: opened → run → proven</td></tr>
+    <tr><td>incidents / forks / forks.resolved</td><td>counts opened incidents, attempted forks, and verified resolutions</td></tr>
   </table>
-  <div class="note"><b>Also self-hosted:</b> the engine instruments itself with OTel into the same SigNoz — dogfooding the tool that observes the agents.</div>
+  <div class="note"><b>Service telemetry:</b> the engine sends its own OTel data to the same SigNoz instance.</div>
 </div></section>
 
 <footer><div class="wrap">
-  HINDSIGHT · workflows v1 · fork the past, fix the future
+  HINDSIGHT · workflows v1
 </div></footer>
 
 </body>

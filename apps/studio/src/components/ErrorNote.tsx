@@ -12,7 +12,7 @@ export function friendlyError(err: unknown): FriendlyError {
       case ERR.signozAuthMissing:
         return {
           title: "SigNoz API key not configured on the engine",
-          hint: "Set SIGNOZ_API_KEY on replay-engine and restart it — runs, compare, and fleet all read from the SigNoz query API.",
+          hint: "Set SIGNOZ_API_KEY on replay-engine and restart it. Runs, compare, and fleet all read from the SigNoz query API.",
         };
       case ERR.signozUnavailable:
         return {

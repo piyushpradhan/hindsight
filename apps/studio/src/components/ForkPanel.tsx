@@ -224,7 +224,7 @@ export function ForkPanel({
       );
     } catch (err) {
       const info = friendlyError(err);
-      setError(info.hint ? `${info.title} — ${info.hint}` : info.title);
+      setError(info.hint ? `${info.title}: ${info.hint}` : info.title);
       setBusy(false);
     }
   };
@@ -333,7 +333,7 @@ export function ForkPanel({
             />
             {step.kind !== "tool" && (
               <div className="policy-hint">
-                note: step #{step.index} is an llm step — overrides usually target a tool step.
+                Note: step #{step.index} is an LLM step. Overrides usually target a tool step.
               </div>
             )}
           </div>

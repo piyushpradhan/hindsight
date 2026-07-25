@@ -24,7 +24,7 @@ const sys: ChatMessage = {
 };
 const usr: ChatMessage = {
   role: "user",
-  content: "What is 0.35 BTC worth in EUR right now? I trade on Kraken — include their fee in the estimate.",
+  content: "What is 0.35 BTC worth in EUR right now? I trade on Kraken, so include their fee in the estimate.",
 };
 const asst0: ChatMessage = {
   role: "assistant",
@@ -37,7 +37,7 @@ const tool1: ChatMessage = {
   role: "tool",
   content: JSON.stringify({
     results: [
-      { title: "BTC to EUR — CoinDesk", snippet: "Bitcoin trades at €61,245.50, up 1.8% in 24h.", url: "https://coindesk.com/price/bitcoin" },
+      { title: "BTC to EUR | CoinDesk", snippet: "Bitcoin trades at €61,245.50, up 1.8% in 24h.", url: "https://coindesk.com/price/bitcoin" },
       { title: "Kraken BTC/EUR", snippet: "Last: €61,244.90 · 24h vol 412 BTC.", url: "https://kraken.com/prices/bitcoin" },
     ],
   }),
@@ -45,7 +45,7 @@ const tool1: ChatMessage = {
 const asst2: ChatMessage = {
   role: "assistant",
   content: {
-    content: "BTC is trading around €61,245.50. Gross value for 0.35 BTC is roughly €21,436 — computing exactly.",
+    content: "BTC is trading around €61,245.50. I'll calculate the gross value for 0.35 BTC.",
     toolCalls: [{ name: "calculator", arguments: { expression: "0.35 * 61245.50" } }],
   },
 };
@@ -53,7 +53,7 @@ const tool3: ChatMessage = { role: "tool", content: JSON.stringify({ result: 214
 const asst4: ChatMessage = {
   role: "assistant",
   content: {
-    content: "Gross value is €21,435.93. Kraken's taker fee will reduce this slightly — looking up their current fee schedule.",
+    content: "Gross value is €21,435.93. Now I need Kraken's current taker fee.",
     toolCalls: [{ name: "web_search", arguments: { query: "kraken trading fee btc eur taker" } }],
   },
 };
@@ -161,7 +161,7 @@ const failedSteps: RunStep[] = [
     outputTokens: 210,
     requestMessages: [sys, usr, asst0, tool1, asst2, tool3, asst4, tool5],
     response: {
-      content: "The fee lookup returned malformed data — I could not parse it. Retrying the identical query.",
+      content: "The fee lookup returned malformed data, so I couldn't parse it. Retrying the same query.",
       toolCalls: [{ name: "web_search", arguments: { query: "kraken trading fee btc eur taker" } }],
     },
   },
@@ -203,7 +203,7 @@ const failedRun: RunSummary = {
 const forkTool0Output = {
   results: [
     {
-      title: "Kraken fee schedule — Kraken",
+      title: "Kraken fee schedule | Kraken",
       snippet: "Taker fee: 0.25% for 30-day volume under $50,000. Maker: 0.16%.",
       url: "https://www.kraken.com/features/fee-schedule",
     },
@@ -239,7 +239,7 @@ const forkSteps: RunStep[] = [
     outputTokens: 178,
     requestMessages: [sys, usr, asst0, tool1, asst2, tool3, asst4, forkTool0Msg],
     response: {
-      content: "Kraken's taker fee is 0.25%. Fee on €21,435.93 is about €53.59 — computing the net figure.",
+      content: "Kraken's taker fee is 0.25%. I'll subtract the €53.59 fee from €21,435.93.",
       toolCalls: [{ name: "calculator", arguments: { expression: "21435.925 * (1 - 0.0025)" } }],
     },
   },
@@ -280,7 +280,7 @@ const forkSteps: RunStep[] = [
       {
         role: "assistant",
         content: {
-          content: "Kraken's taker fee is 0.25%. Fee on €21,435.93 is about €53.59 — computing the net figure.",
+          content: "Kraken's taker fee is 0.25%. I'll subtract the €53.59 fee from €21,435.93.",
           toolCalls: [{ name: "calculator", arguments: { expression: "21435.925 * (1 - 0.0025)" } }],
         },
       },
@@ -327,7 +327,7 @@ const okTool1: ChatMessage = {
   role: "tool",
   content: JSON.stringify({
     results: [
-      { title: "ETH/BTC — TradingView", snippet: "Ratio 0.0521, down from 0.0548 a week ago.", url: "https://tradingview.com/symbols/ETHBTC" },
+      { title: "ETH/BTC | TradingView", snippet: "Ratio 0.0521, down from 0.0548 a week ago.", url: "https://tradingview.com/symbols/ETHBTC" },
     ],
   }),
 };
@@ -492,7 +492,7 @@ function incidentStore(): Incident[] {
         createdAt: "2026-07-20T14:33:02.000Z",
         agentId: "research-agent",
         traceId: MOCK_ORIGINAL_TRACE,
-        alertName: "run failure rate > 20% (5m) — research-agent",
+        alertName: "research-agent: run failure rate > 20% (5m)",
         severity: "critical",
         status: "open",
       },
@@ -501,7 +501,7 @@ function incidentStore(): Incident[] {
         createdAt: "2026-07-20T09:20:11.000Z",
         agentId: "support-triage",
         traceId: MOCK_TIMEOUT_TRACE,
-        alertName: "step duration p95 anomaly — support-triage",
+        alertName: "support-triage: step duration p95 anomaly",
         severity: "warning",
         status: "verifying",
         notes: "Suspected loop in ticket_lookup; awaiting counterfactual fork.",
@@ -597,7 +597,7 @@ export function mockCompareResult(): CompareResult {
     outputDiff: [
       "--- original (failed)",
       "+++ fork (success)",
-      "- Run failed: malformed_tool_json — web_search returned invalid JSON on 2 consecutive calls. No final answer produced.",
+      "- Run failed: malformed_tool_json. web_search returned invalid JSON on 2 consecutive calls and produced no final answer.",
       "+ 0.35 BTC ≈ €21,382.34 net of Kraken's 0.25% taker fee (gross €21,435.93 at €61,245.50/BTC; fee ≈ €53.59).",
     ].join("\n"),
   });
