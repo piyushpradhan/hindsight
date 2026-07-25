@@ -64,26 +64,44 @@ and measured resolution time.
 
 ## Quickstart
 
-SigNoz must already be running at `http://localhost:8080`. Create a SigNoz API
-key, choose a webhook bearer secret, install and start
-[Ollama](https://ollama.com), then copy and fill the local environment:
+Requirements: Docker, Node, and pnpm. A self-hosted SigNoz stack is vendored in
+this repository under `pours/deployment/`, so a clean checkout needs three
+commands:
 
 ```bash
-ollama pull gemma3:1b
-cp .env.example .env
-# Set SIGNOZ_API_KEY and SIGNOZ_WEBHOOK_SECRET in .env.
-make doctor
+make signoz
+```
+
+```bash
+make key
+```
+
+```bash
 make demo
 ```
 
+`make signoz` starts the vendored SigNoz stack and waits until it answers. The
+first run pulls images and migrates ClickHouse, so give it a few minutes.
+
+`make key` creates `.env`, generates the webhook bearer secret, then opens
+SigNoz and waits for you to paste an API key. This is the only manual step,
+because SigNoz mints API keys from its UI: create the first account if the
+install is fresh, then **Settings → API Keys → New Key** with the Admin role.
+
+Already running SigNoz elsewhere? Skip `make signoz` and set `SIGNOZ_URL`. Stop
+the vendored stack with `make signoz-down`; telemetry volumes are kept.
+
+Taskline defaults to the deterministic `offline` provider, so the full
+record/replay/fork path works with nothing to download. See
+[Taskline](#taskline-ai-to-do-agent-demo) to run it against a real model.
+
 `make doctor` verifies Node, pnpm, the Foundry files, SigNoz v0.133.x, OTLP
-ingestion, both required credentials, the selected Taskline provider, and the
-configured Ollama model. To inspect the deterministic product flow without
-Ollama, set `HINDSIGHT_TODO_PROVIDER=offline` in `.env`; the real-provider proof
-still requires Ollama. `make demo` idempotently provisions the notification
-channel, four alert rules, and two dashboards; builds the workspace; waits for
-the reference runner (`:4124`), replay-engine (`:4123`), Studio (`:5173`), and
-Taskline (`:4174`) to become healthy; then records mixed demo runs.
+ingestion, both required credentials, and the selected Taskline provider (plus
+the configured Ollama model when that provider is chosen). `make demo`
+idempotently provisions the notification channel, four alert rules, and two
+dashboards; builds the workspace; waits for the reference runner (`:4124`),
+replay-engine (`:4123`), Studio (`:5173`), and Taskline (`:4174`) to become
+healthy; then records mixed demo runs.
 
 An incident appears only when an installed trace-correlated SigNoz rule
 delivers an authenticated webhook. Hindsight never inserts a fake incident in
@@ -123,13 +141,21 @@ records the agent's `list_tasks` and `create_task` calls. The failure example
 uses an invalid priority, opens a Hindsight incident, and links directly to the
 failed tool step so you can fork it with an overridden result.
 
-`make up` runs Taskline through local `gemma3:1b`; Ollama's local API needs no
-key. Taskline uses a JSON action protocol because Gemma 3 1B does not expose
-native tool calls. Set `HINDSIGHT_TODO_PROVIDER=offline` for the deterministic
-fallback, or use `anthropic` plus `ANTHROPIC_API_KEY`.
+Taskline defaults to `HINDSIGHT_TODO_PROVIDER=offline`, a deterministic
+provider that needs no model and no key. To drive it with a real local model,
+install [Ollama](https://ollama.com) and switch providers in `.env`:
+
+```bash
+ollama pull gemma3:1b
+```
+
+Then set `HINDSIGHT_TODO_PROVIDER=ollama` and re-run `make demo`. Ollama's local
+API needs no key. Taskline uses a JSON action protocol because Gemma 3 1B does
+not expose native tool calls. `anthropic` plus `ANTHROPIC_API_KEY` also works.
 
 To prove the complete local non-mock path, including verified incident
-resolution and `provider=ollama` evidence on the fork trace:
+resolution and `provider=ollama` evidence on the fork trace (requires the
+`ollama` provider):
 
 ```bash
 pnpm --filter @hindsight/demo-agents verify:ollama
