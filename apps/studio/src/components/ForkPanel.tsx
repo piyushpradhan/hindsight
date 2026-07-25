@@ -9,7 +9,6 @@ import type {
   RunStep,
 } from "@hindsight/shared";
 import { api } from "../api";
-import { Badge } from "./Badge";
 import { Dropdown } from "./Dropdown";
 import { friendlyError } from "./ErrorNote";
 
@@ -65,28 +64,6 @@ function systemPromptOf(step: RunStep): string {
   const sys = step.requestMessages?.find((m) => m.role === "system");
   if (!sys) return "";
   return typeof sys.content === "string" ? sys.content : JSON.stringify(sys.content, null, 2);
-}
-
-export function forkReadinessLabels(
-  agentRevision: string | undefined,
-  checkpoint: CheckpointReport | undefined,
-  capabilitiesLoaded: boolean,
-  runner: ForkRunnerCapability | null,
-): string[] {
-  return [
-    `${checkpoint?.complete ? "checkpoint complete" : "checkpoint incomplete"}${
-      checkpoint?.schemaVersion ? ` · schema version ${checkpoint.schemaVersion}` : ""
-    }`,
-    agentRevision ? `agent revision · ${agentRevision}` : "agent revision not recorded",
-    capabilitiesLoaded
-      ? runner?.available
-        ? `runner ready · ${runner.revision}`
-        : "runner unavailable"
-      : "checking runner",
-    ...(runner?.safeLiveTools.length
-      ? [`safe live tools · ${runner.safeLiveTools.join(", ")}`]
-      : []),
-  ];
 }
 
 export function ForkPanel({
@@ -234,22 +211,6 @@ export function ForkPanel({
     <form className="fork-panel" onSubmit={submit}>
       <div className="fork-intro">
         Change one thing at step #{step.index}, then compare what happens.
-      </div>
-      <div className="summary-strip" aria-label="Replay provenance">
-        {forkReadinessLabels(agentRevision, checkpoint, capabilitiesLoaded, runner).map((label) => (
-          <Badge
-            key={label}
-            tone={
-              label.startsWith("checkpoint complete") || label.startsWith("runner ready")
-                ? "ok"
-                : label.includes("incomplete") || label.includes("unavailable")
-                  ? "ember"
-                  : "muted"
-            }
-          >
-            {label}
-          </Badge>
-        ))}
       </div>
       {!checkpoint?.complete && (
         <div className="form-error">

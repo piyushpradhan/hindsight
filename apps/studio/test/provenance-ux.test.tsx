@@ -52,7 +52,7 @@ test("step labels expose recorded provenance without calling the replay live", (
   );
 });
 
-test("run and fork labels expose checkpoint, revision, and runner readiness", async () => {
+test("run labels expose checkpoint and revision", async () => {
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
     appType: "custom",
@@ -60,10 +60,9 @@ test("run and fork labels expose checkpoint, revision, and runner readiness", as
     server: { middlewareMode: true },
   });
   try {
-    const [{ runEvidenceLabels }, { forkReadinessLabels }] = await Promise.all([
-      vite.ssrLoadModule("/src/screens/RunDetailScreen.tsx"),
-      vite.ssrLoadModule("/src/components/ForkPanel.tsx"),
-    ]);
+    const { runEvidenceLabels } = await vite.ssrLoadModule(
+      "/src/screens/RunDetailScreen.tsx",
+    );
     assert.deepEqual(
       runEvidenceLabels(run, { complete: true, schemaVersion: "1", issues: [] }),
       [
@@ -71,26 +70,6 @@ test("run and fork labels expose checkpoint, revision, and runner readiness", as
         "agent revision · research-agent@abc123",
         "checkpoint complete · schema version 1",
       ],
-    );
-    assert.deepEqual(
-      forkReadinessLabels(
-        run.agentRevision,
-        { complete: true, schemaVersion: "1", issues: [] },
-        true,
-        {
-          agentId: run.agentId,
-          revision: run.agentRevision!,
-          available: true,
-          mutations: ["model_swap"],
-          safeLiveTools: ["web.search"],
-        },
-      ),
-      [
-      "checkpoint complete · schema version 1",
-      "agent revision · research-agent@abc123",
-      "runner ready · research-agent@abc123",
-      "safe live tools · web.search",
-    ],
     );
   } finally {
     await vite.close();
