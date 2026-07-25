@@ -131,7 +131,7 @@ export function LandingPage() {
           </div>
           <div className="evidence-outcome">
             <div><span>ORIGINAL</span><strong>failure</strong></div>
-            <span className="evidence-route" aria-hidden="true">TESTED CHANGE →</span>
+            <span className="evidence-route" aria-hidden="true">TESTED CHANGE</span>
             <div><span>FORK</span><strong className="positive-text">success</strong></div>
           </div>
           <div className="evidence-deltas">

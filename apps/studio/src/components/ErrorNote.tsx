@@ -61,8 +61,8 @@ export function friendlyError(err: unknown): FriendlyError {
         return { title: "The engine rejected the request", hint: err.detail };
       case ERR.engineUnreachable:
         return {
-          title: "replay-engine is not reachable",
-          hint: "Start it on :4123 (pnpm --filter @hindsight/replay-engine dev), or open Studio with ?mock=1 to browse fixture data.",
+          title: "Live data is temporarily unavailable",
+          hint: "We couldn't connect to the incident service. Please try again in a moment.",
         };
       default:
         return { title: err.message };

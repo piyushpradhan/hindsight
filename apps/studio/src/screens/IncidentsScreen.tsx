@@ -62,11 +62,6 @@ export function IncidentsScreen() {
     };
   }, []);
 
-  const createIncident = async (traceId: string) => {
-    await api.createIncident({ traceId });
-    await reload();
-  };
-
   const patch = async (id: string, p: Partial<Incident>) => {
     setActionError(null);
     try {
@@ -126,14 +121,6 @@ export function IncidentsScreen() {
             verify a fix.
           </p>
         </div>
-        <details className="manual-trace">
-          <summary className="btn btn-ghost btn-sm">Open trace</summary>
-          <div className="manual-trace-panel">
-            <strong>Open a trace manually</strong>
-            <p>Use this when you have a SigNoz trace ID that is not already in the queue.</p>
-            <TraceLookup onCreateIncident={createIncident} />
-          </div>
-        </details>
       </div>
 
       <section className="workflow-guide" aria-labelledby="workflow-title">
@@ -181,39 +168,65 @@ export function IncidentsScreen() {
               <h2>Incident queue</h2>
               <p>Open incidents need a tested fix. Resolved incidents keep the proof.</p>
             </div>
-            <span className="queue-count">
-              {incidents.filter((incident) => incident.status === "open").length} open
-            </span>
+            <div className="queue-tools">
+              <span className="queue-count">
+                {incidents.filter((incident) => incident.status === "open").length} open
+              </span>
+              <div className="trace-search" aria-label="Open trace by ID">
+                <TraceLookup />
+              </div>
+            </div>
           </div>
           <div className="table-shell">
             <table className="table incident-table">
+              <colgroup>
+                <col className="incident-column" />
+                <col className="severity-column" />
+                <col className="agent-column" />
+                <col className="detected-column" />
+                <col className="status-column" />
+                <col className="actions-column" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Incident</th>
+                  <th>Severity</th>
+                  <th>Agent</th>
                   <th>Detected</th>
                   <th>Status</th>
                   <th>Next step</th>
                 </tr>
               </thead>
               <tbody>
-                {incidents.map((inc) => (
-                  <tr
-                    key={inc.id}
-                    tabIndex={0}
-                    onClick={() => navigate(incidentUrl(inc))}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key === "Enter") navigate(incidentUrl(inc));
-                    }}
-                  >
+                {incidents.map((inc) => {
+                  const transitionActions = transitionsFor(inc.status);
+                  const canPostmortem = inc.status === "resolved" && inc.verification?.verified;
+                  const actionCount = transitionActions.length + (canPostmortem ? 1 : 0);
+                  const chooseTransition = (action: { label: string; to: IncidentStatus }) => {
+                    if (action.to === "dismissed") {
+                      setDismissTarget(inc);
+                      setDismissReason("");
+                    } else {
+                      void transition(inc, action.to, action.label);
+                    }
+                  };
+
+                  return (
+                    <tr
+                      key={inc.id}
+                      tabIndex={0}
+                      onClick={() => navigate(incidentUrl(inc))}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter") navigate(incidentUrl(inc));
+                      }}
+                    >
                     <td data-label="Incident">
                       <div className="incident-title">{inc.alertName}</div>
-                      {inc.notes && <div className="inc-notes">{inc.notes}</div>}
-                      <div className="incident-meta">
-                        <span className="incident-agent">Agent · {inc.agentId}</span>
-                        <SeverityBadge severity={inc.severity} />
-                        <span className="td-mono">Trace · {shortId(inc.traceId)}…</span>
-                      </div>
+                    </td>
+                    <td data-label="Severity"><SeverityBadge severity={inc.severity} /></td>
+                    <td data-label="Agent">
+                      <span className="incident-agent">{inc.agentId}</span>
                     </td>
                     <td className="td-mono muted" data-label="Detected">{timeAgo(inc.createdAt)}</td>
                     <td data-label="Status"><IncidentStatusBadge status={inc.status} /></td>
@@ -229,36 +242,38 @@ export function IncidentsScreen() {
                             {nextAction(inc)} <span aria-hidden="true">→</span>
                           </Link>
                         )}
-                        <details className="act-menu">
-                          <summary className="btn btn-ghost btn-sm act-menu-btn" aria-label="more actions">⋯</summary>
-                          <div className="act-pop">
-                            {inc.status === "resolved" && inc.verification?.verified && (
-                              <button type="button" onClick={() => setPostmortemId(inc.id)}>
-                                Postmortem
-                              </button>
-                            )}
-                            {transitionsFor(inc.status).map((t) => (
-                              <button
-                                key={t.to}
-                                type="button"
-                                onClick={() => {
-                                  if (t.to === "dismissed") {
-                                    setDismissTarget(inc);
-                                    setDismissReason("");
-                                  } else {
-                                    void transition(inc, t.to, t.label);
-                                  }
-                                }}
-                              >
-                                {t.label}
-                              </button>
-                            ))}
-                          </div>
-                        </details>
+                        {actionCount === 1 ? (
+                          canPostmortem ? (
+                            <button className="btn btn-sm inc-secondary-action" type="button" onClick={() => setPostmortemId(inc.id)}>
+                              Postmortem
+                            </button>
+                          ) : (
+                            <button className="btn btn-sm inc-secondary-action" type="button" onClick={() => chooseTransition(transitionActions[0])}>
+                              {transitionActions[0].label}
+                            </button>
+                          )
+                        ) : actionCount > 1 ? (
+                          <details className="act-menu">
+                            <summary className="btn btn-ghost btn-sm act-menu-btn" aria-label="more actions">⋯</summary>
+                            <div className="act-pop">
+                              {canPostmortem && (
+                                <button type="button" onClick={() => setPostmortemId(inc.id)}>
+                                  Postmortem
+                                </button>
+                              )}
+                              {transitionActions.map((action) => (
+                                <button key={action.to} type="button" onClick={() => chooseTransition(action)}>
+                                  {action.label}
+                                </button>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

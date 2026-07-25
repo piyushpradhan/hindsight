@@ -17,16 +17,16 @@ function EngineStatus() {
         if (!alive) return;
         if (h.signozAuthed === false) {
           setState("warn");
-          setTitle("replay-engine up · SigNoz API key missing (SIGNOZ_API_KEY)");
+          setTitle("Live data connected, but monitoring is not fully configured");
         } else {
           setState("ok");
-          setTitle("replay-engine up · SigNoz connected");
+          setTitle("Live data connected");
         }
       })
       .catch(() => {
         if (!alive) return;
         setState("down");
-        setTitle("replay-engine unreachable on :4123 — start it or use ?mock=1");
+        setTitle("Live data connection unavailable");
       });
     return () => {
       alive = false;

@@ -35,18 +35,20 @@ const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").r
 
 /**
  * Explicit fixture mode — OFF by default; the real API is always the default.
- * Enable by opening Studio with ?mock=1 (persisted in localStorage), disable
- * with ?mock=0. While active the header shows a "mock data" pill.
+ * Enable in development by opening Studio with ?mock=1 (persisted in
+ * localStorage), disable with ?mock=0. Production builds always use the live API.
  */
 const MOCK_KEY = "hindsight:mock";
-try {
-  const q = new URLSearchParams(window.location.search).get("mock");
-  if (q === "1") window.localStorage.setItem(MOCK_KEY, "1");
-  else if (q === "0") window.localStorage.removeItem(MOCK_KEY);
-} catch {
-  // storage unavailable (private mode) — fall through to in-memory default
+if (import.meta.env.DEV) {
+  try {
+    const q = new URLSearchParams(window.location.search).get("mock");
+    if (q === "1") window.localStorage.setItem(MOCK_KEY, "1");
+    else if (q === "0") window.localStorage.removeItem(MOCK_KEY);
+  } catch {
+    // storage unavailable (private mode) — fall through to in-memory default
+  }
 }
-export const MOCK_MODE = (() => {
+export const MOCK_MODE = import.meta.env.DEV && (() => {
   try {
     return window.localStorage.getItem(MOCK_KEY) === "1";
   } catch {
