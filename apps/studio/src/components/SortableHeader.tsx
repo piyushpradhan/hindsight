@@ -1,3 +1,5 @@
+import { Dropdown } from "./Dropdown";
+
 export type SortDirection = "asc" | "desc";
 export type SortState<Key extends string> = { key: Key; direction: SortDirection };
 
@@ -60,20 +62,16 @@ export function MobileSort<Key extends string>({
 }) {
   return (
     <div className="mobile-sort-controls">
-      <select
+      <Dropdown
         className="input table-filter"
         value={sort.key}
-        onChange={(event) =>
-          onChange({ key: event.target.value as Key, direction: "asc" })
-        }
-        aria-label={label}
-      >
-        {options.map((option) => (
-          <option key={option.key} value={option.key}>
-            Sort by {option.label}
-          </option>
-        ))}
-      </select>
+        onValueChange={(value) => onChange({ key: value as Key, direction: "asc" })}
+        ariaLabel={label}
+        options={options.map((option) => ({
+          value: option.key,
+          label: `Sort by ${option.label}`,
+        }))}
+      />
       <button
         className="btn btn-ghost"
         type="button"

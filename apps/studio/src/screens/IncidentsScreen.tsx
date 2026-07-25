@@ -11,6 +11,7 @@ import { api } from "../api";
 import { shortId, timeAgo } from "../format";
 import { IncidentStatusBadge, SeverityBadge } from "../components/Badge";
 import { ErrorNote } from "../components/ErrorNote";
+import { Dropdown } from "../components/Dropdown";
 import { PostmortemModal } from "../components/PostmortemModal";
 import {
   MobileSort,
@@ -19,7 +20,7 @@ import {
   type SortState,
 } from "../components/SortableHeader";
 
-const PAGE_SIZE = 50;
+const INCIDENT_LIMIT = 100;
 type IncidentSortKey = IncidentSortField;
 
 /** Plain status transitions the engine allows (apps/replay-engine incidents/store.ts). */
@@ -57,7 +58,6 @@ export function IncidentsScreen() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<IncidentStatus | "all">("all");
   const [severity, setSeverity] = useState("all");
-  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<SortState<IncidentSortKey>>({
     key: "detected",
@@ -72,7 +72,6 @@ export function IncidentsScreen() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setPage(0);
       setQuery(q.trim());
     }, 200);
     return () => window.clearTimeout(timer);
@@ -81,25 +80,20 @@ export function IncidentsScreen() {
   const loadIncidents = useCallback(
     () =>
       api.listIncidentsPage({
-        offset: page * PAGE_SIZE,
-        limit: PAGE_SIZE,
+        limit: INCIDENT_LIMIT,
         query: query || undefined,
         status: status === "all" ? undefined : status,
         severity: severity === "all" ? undefined : severity,
         sort: sort.key,
         direction: sort.direction,
       }),
-    [page, query, severity, sort, status],
+    [query, severity, sort, status],
   );
 
   const reload = useCallback(async () => {
     const result = await loadIncidents();
-    if (result.items.length === 0 && page > 0) {
-      setPage((current) => Math.max(0, current - 1));
-      return;
-    }
     setIncidentPage(result);
-  }, [loadIncidents, page]);
+  }, [loadIncidents]);
 
   useEffect(() => {
     let alive = true;
@@ -107,10 +101,6 @@ export function IncidentsScreen() {
     loadIncidents()
       .then((result) => {
         if (!alive) return;
-        if (result.items.length === 0 && page > 0) {
-          setPage((current) => Math.max(0, current - 1));
-          return;
-        }
         setIncidentPage(result);
         setError(null);
       })
@@ -119,7 +109,7 @@ export function IncidentsScreen() {
     return () => {
       alive = false;
     };
-  }, [loadIncidents, page]);
+  }, [loadIncidents]);
 
   const patch = async (id: string, p: Partial<Incident>) => {
     setActionError(null);
@@ -175,10 +165,7 @@ export function IncidentsScreen() {
       label={label}
       active={sort.key === key}
       direction={sort.direction}
-      onSort={() => {
-        setPage(0);
-        setSort((current) => nextSort(current, key));
-      }}
+      onSort={() => setSort((current) => nextSort(current, key))}
     />
   );
 
@@ -255,37 +242,32 @@ export function IncidentsScreen() {
               spellCheck={false}
               aria-label="Search incidents"
             />
-            <select
+            <Dropdown
               className="input table-filter"
               value={status}
-              onChange={(event) => {
-                setPage(0);
-                setStatus(event.target.value as IncidentStatus | "all");
-              }}
-              aria-label="Filter incidents by status"
-            >
-              <option value="all">All statuses</option>
-              <option value="open">Open</option>
-              <option value="verifying">Verifying</option>
-              <option value="resolved">Resolved</option>
-              <option value="dismissed">Dismissed</option>
-            </select>
-            <select
+              onValueChange={(value) => setStatus(value as IncidentStatus | "all")}
+              ariaLabel="Filter incidents by status"
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "open", label: "Open" },
+                { value: "verifying", label: "Verifying" },
+                { value: "resolved", label: "Resolved" },
+                { value: "dismissed", label: "Dismissed" },
+              ]}
+            />
+            <Dropdown
               className="input table-filter"
               value={severity}
-              onChange={(event) => {
-                setPage(0);
-                setSeverity(event.target.value);
-              }}
-              aria-label="Filter incidents by severity"
-            >
-              <option value="all">All severities</option>
-              {incidentPage.severities.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              onValueChange={setSeverity}
+              ariaLabel="Filter incidents by severity"
+              options={[
+                { value: "all", label: "All severities" },
+                ...incidentPage.severities.map((option) => ({
+                  value: option,
+                  label: option,
+                })),
+              ]}
+            />
             <MobileSort
               label="Sort incidents by"
               options={[
@@ -296,10 +278,7 @@ export function IncidentsScreen() {
                 { key: "status", label: "status" },
               ]}
               sort={sort}
-              onChange={(next) => {
-                setPage(0);
-                setSort(next);
-              }}
+              onChange={setSort}
             />
           </div>
           {incidents.length === 0 ? (
@@ -405,27 +384,6 @@ export function IncidentsScreen() {
                 </tbody>
               </table>
             </div>
-          )}
-          {(page > 0 || incidentPage.hasMore) && (
-            <nav className="table-pagination" aria-label="Incident pages">
-              <button
-                className="btn btn-ghost btn-sm"
-                type="button"
-                disabled={page === 0 || loading}
-                onClick={() => setPage((current) => Math.max(0, current - 1))}
-              >
-                Previous
-              </button>
-              <span>Page {page + 1}</span>
-              <button
-                className="btn btn-ghost btn-sm"
-                type="button"
-                disabled={!incidentPage.hasMore || loading}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                Next
-              </button>
-            </nav>
           )}
         </div>
       )}

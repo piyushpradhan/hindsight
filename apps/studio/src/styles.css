@@ -1219,23 +1219,133 @@ h1 {
   transition: border-color 160ms var(--ease-switch), background-color 160ms var(--ease-switch);
 }
 
-select.input {
-  appearance: none;
-  padding: 9px 36px 9px 12px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--color-pale-stone) 50%),
-    linear-gradient(135deg, var(--color-pale-stone) 50%, transparent 50%);
-  background-position:
-    calc(100% - 15px) 50%,
-    calc(100% - 11px) 50%;
-  background-repeat: no-repeat;
-  background-size: 4px 4px;
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-right: 10px;
   cursor: pointer;
+  text-align: left;
+  user-select: none;
+  white-space: nowrap;
 }
 
-select.input:hover {
+.select-trigger:hover,
+.select-trigger[data-popup-open] {
   border-color: var(--color-graphite-mid);
   background-color: #211e1c;
+}
+
+.select-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--color-ash-stroke);
+  color: var(--color-warm-granite);
+  transition: color 160ms var(--ease-switch), transform 160ms var(--ease-switch);
+}
+
+.select-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.4;
+}
+
+.select-trigger:hover .select-icon,
+.select-trigger[data-popup-open] .select-icon {
+  color: var(--color-bone);
+}
+
+.select-trigger[data-popup-open] .select-icon {
+  transform: rotate(180deg);
+}
+
+.select-positioner {
+  z-index: 110;
+  outline: none;
+}
+
+.select-popup {
+  min-width: max(var(--anchor-width), 150px);
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: min(320px, var(--available-height));
+  overflow: hidden;
+  border: 1px solid var(--color-ash-stroke);
+  border-radius: 6px;
+  outline: none;
+  background: #1a1816;
+  box-shadow: 0 18px 44px rgba(10, 8, 7, 0.46), inset 0 1px rgba(255, 255, 255, 0.035);
+  color: var(--color-bone);
+  transform-origin: var(--transform-origin);
+  transition: opacity 120ms var(--ease-switch), transform 120ms var(--ease-switch);
+}
+
+.select-popup[data-starting-style],
+.select-popup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-3px) scale(0.985);
+}
+
+.select-list {
+  max-height: min(318px, var(--available-height));
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--color-graphite-mid) transparent;
+  scrollbar-width: thin;
+}
+
+.select-item {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  color: var(--color-pale-stone);
+  cursor: default;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  line-height: 1.25;
+  transition: background-color 100ms var(--ease-switch), color 100ms var(--ease-switch);
+}
+
+.select-item[data-highlighted] {
+  background: #282421;
+  color: var(--color-chalk);
+}
+
+.select-item[data-selected] {
+  color: var(--color-bone);
+}
+
+.select-item[data-disabled] {
+  color: var(--color-graphite-mid);
+}
+
+.select-item-check {
+  display: inline-flex;
+  color: var(--color-signal-orange);
+}
+
+.select-item-check svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.7;
 }
 
 .input::placeholder {
@@ -1365,17 +1475,6 @@ textarea.input {
   font-family: var(--font-geist-mono);
   font-size: 12px;
   white-space: nowrap;
-}
-
-.table-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 16px;
-  color: var(--color-warm-granite);
-  font-family: var(--font-geist-mono);
-  font-size: 12px;
 }
 
 .mobile-sort-controls {

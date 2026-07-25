@@ -10,6 +10,7 @@ import type {
 } from "@hindsight/shared";
 import { api } from "../api";
 import { Badge } from "./Badge";
+import { Dropdown } from "./Dropdown";
 import { friendlyError } from "./ErrorNote";
 
 const MUTATION_TYPES: Mutation["type"][] = [
@@ -375,21 +376,18 @@ export function ForkPanel({
           <div>
             <label className="field-label" htmlFor="fork-tool">tool to disable</label>
             {tools.length > 0 ? (
-              <select
+              <Dropdown
                 id="fork-tool"
                 className="input"
                 value={toolName}
-                onChange={(e) => setToolName(e.target.value)}
-              >
-                <option value="" disabled>
-                  select a tool…
-                </option>
-                {tools.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setToolName}
+                ariaLabel="Tool to disable"
+                placeholder="select a tool…"
+                options={[
+                  { value: "", label: "select a tool…", disabled: true },
+                  ...tools.map((tool) => ({ value: tool, label: tool })),
+                ]}
+              />
             ) : (
               <div className="policy-hint">this run has no tool steps to disable.</div>
             )}

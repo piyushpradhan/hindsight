@@ -5,6 +5,7 @@ import { api } from "../api";
 import { fmtTime, fmtTokens, fmtUsd, shortId } from "../format";
 import { Badge, OutcomeBadge } from "../components/Badge";
 import { ErrorNote } from "../components/ErrorNote";
+import { Dropdown } from "../components/Dropdown";
 import {
   compareValues,
   MobileSort,
@@ -123,17 +124,18 @@ export function RunsScreen() {
               spellCheck={false}
               aria-label="Search runs"
             />
-            <select
+            <Dropdown
               className="input table-filter"
               value={outcome}
-              onChange={(e) => setOutcome(e.target.value)}
-              aria-label="Filter runs by outcome"
-            >
-              <option value="all">All outcomes</option>
-              <option value="success">Success</option>
-              <option value="failure">Failure</option>
-              <option value="timeout">Timeout</option>
-            </select>
+              onValueChange={setOutcome}
+              ariaLabel="Filter runs by outcome"
+              options={[
+                { value: "all", label: "All outcomes" },
+                { value: "success", label: "Success" },
+                { value: "failure", label: "Failure" },
+                { value: "timeout", label: "Timeout" },
+              ]}
+            />
             <MobileSort
               label="Sort runs by"
               options={[
