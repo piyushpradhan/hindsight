@@ -1,10 +1,12 @@
 # Hindsight — config-as-code / infra targets.
 #
-# NOTE: SigNoz itself is NOT managed here. A self-hosted SigNoz already runs at
-# http://localhost:8080 and its docker-compose lives under pours/deployment/.
-# These targets bring up the Hindsight app layer (replay-engine + studio + Taskline),
-# seed demo data, and open the UIs. `provision` installs the versioned resources
-# under infra/dashboards and infra/alerts through the SigNoz API.
+# `make signoz` starts the self-hosted SigNoz stack vendored under
+# pours/deployment/. `make demo` brings up the Hindsight app layer
+# (replay-engine + studio + Taskline), seeds demo data, and opens the UIs.
+# `provision` installs the versioned resources under infra/dashboards and
+# infra/alerts through the SigNoz API.
+#
+# From a clean checkout:  make signoz && make key && make demo
 
 -include .env
 export
@@ -21,25 +23,78 @@ HINDSIGHT_API_TOKEN ?=
 HINDSIGHT_ALLOW_UNAUTHENTICATED_LOCALHOST ?= true
 RUNNER_URL       ?= http://127.0.0.1:4124
 TODO_URL         ?= http://localhost:4174
-HINDSIGHT_TODO_PROVIDER ?= ollama
+HINDSIGHT_TODO_PROVIDER ?= offline
 OLLAMA_HOST       ?= http://127.0.0.1:11434
 OLLAMA_MODEL      ?= gemma3:1b
 HINDSIGHT_RUNNERS ?= {"research":{"url":"$(RUNNER_URL)","revision":"demo-research@1"},"support-triage":{"url":"$(RUNNER_URL)","revision":"demo-support-triage@1"},"codex":{"url":"$(RUNNER_URL)","revision":"codex-hindsight@ac879e5"},"todo-triage":{"url":"$(RUNNER_URL)","revision":"todo-triage@1"}}
 LOG_DIR          ?= .hindsight-logs
+SIGNOZ_COMPOSE   ?= pours/deployment/compose.yaml
 
 # Cross-platform "open a URL" (macOS: open, Linux: xdg-open).
 OPEN := $(shell command -v open >/dev/null 2>&1 && echo open || echo xdg-open)
 
 .DEFAULT_GOAL := demo
-.PHONY: demo doctor provision provision-dry-run up dev seed seed-codex down help
+.PHONY: demo signoz signoz-down env key doctor provision provision-dry-run up dev seed seed-codex down help
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+# ---- SigNoz stack -----------------------------------------------------------
+signoz: ## Start the vendored SigNoz stack and wait for it to answer
+	docker compose -f $(SIGNOZ_COMPOSE) up -d
+	@printf ">> Waiting for SigNoz at $(SIGNOZ_URL) (first run pulls images and migrates ClickHouse) "
+	@attempt=0; \
+	until curl --fail --silent --max-time 2 "$(SIGNOZ_URL)/api/v1/version" >/dev/null; do \
+		attempt=$$((attempt + 1)); \
+		if [ "$$attempt" -ge 300 ]; then \
+			echo ""; \
+			echo "Timed out waiting for $(SIGNOZ_URL). Check: docker compose -f $(SIGNOZ_COMPOSE) logs"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo ">> SigNoz ready at $(SIGNOZ_URL)"
+
+signoz-down: ## Stop the vendored SigNoz stack (telemetry volumes are kept)
+	docker compose -f $(SIGNOZ_COMPOSE) down
+
+# ---- credentials ------------------------------------------------------------
+# `env` is silent and non-interactive so `demo` can depend on it. `key` is the
+# one step that needs a human, because SigNoz mints API keys only from its UI.
+env: ## Create .env from the template and generate the webhook secret if unset
+	@test -f .env || { cp .env.example .env; echo ">> Created .env from .env.example."; }
+	@if ! grep -qE '^SIGNOZ_WEBHOOK_SECRET=.+' .env; then \
+		secret=$$(openssl rand -hex 16); \
+		grep -v '^SIGNOZ_WEBHOOK_SECRET=' .env > .env.tmp && mv .env.tmp .env; \
+		echo "SIGNOZ_WEBHOOK_SECRET=$$secret" >> .env; \
+		echo ">> Generated SIGNOZ_WEBHOOK_SECRET."; \
+	fi
+
+key: env ## Capture a SigNoz API key into .env (opens the UI, prompts for a paste)
+	@if grep -qE '^SIGNOZ_API_KEY=.+' .env; then \
+		echo ">> SIGNOZ_API_KEY is already set in .env."; \
+	else \
+		echo ""; \
+		echo "  SigNoz mints API keys from its UI only. In $(SIGNOZ_URL):"; \
+		echo "    1. Create the first account if this is a fresh install."; \
+		echo "    2. Settings -> API Keys -> New Key (role: Admin)."; \
+		echo "    3. Copy the key."; \
+		echo ""; \
+		$(OPEN) "$(SIGNOZ_URL)/settings/api-keys" >/dev/null 2>&1 || true; \
+		printf "  Paste the SigNoz API key: "; \
+		read -r pasted; \
+		if [ -z "$$pasted" ]; then echo "  No key entered; .env unchanged."; exit 1; fi; \
+		grep -v '^SIGNOZ_API_KEY=' .env > .env.tmp && mv .env.tmp .env; \
+		echo "SIGNOZ_API_KEY=$$pasted" >> .env; \
+		echo ">> Wrote SIGNOZ_API_KEY to .env."; \
+	fi
 
 # ---- the money target -------------------------------------------------------
 # Goal: from zero to a live, seeded demo in under 5 minutes.
-demo: doctor provision up seed ## Validate, provision, build, start, seed, and open the demo (<5 min)
+demo: env doctor provision up seed ## Validate, provision, build, start, seed, and open the demo (<5 min)
 	@echo ""
 	@echo "  Hindsight demo is live."
 	@echo "  SigNoz (system of record): $(SIGNOZ_URL)"
@@ -61,7 +116,7 @@ provision-dry-run: ## Show missing SigNoz resources without changing them
 	pnpm provision:signoz -- --dry-run
 
 up: ## Install deps, build, and start replay-engine, studio, and Taskline
-	@echo ">> Assuming SigNoz is already up at $(SIGNOZ_URL) (managed under pours/deployment)."
+	@echo ">> Using SigNoz at $(SIGNOZ_URL) (start it with \`make signoz\` if it is not running)."
 	pnpm install
 	pnpm build
 	@mkdir -p $(LOG_DIR)

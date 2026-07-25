@@ -53,6 +53,11 @@ services:
     - SIGNOZ_SQLSTORE_PROVIDER=postgres
     - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_TELEMETRYSTORE_PROVIDER=clickhouse
+    # Alert webhooks target the Hindsight replay-engine on the host. Docker
+    # Desktop resolves host.docker.internal on its own; Linux Docker does not,
+    # and without this the webhook fails silently and no incident ever opens.
+    extra_hosts:
+    - host.docker.internal:host-gateway
     healthcheck:
       interval: 30s
       retries: 3
