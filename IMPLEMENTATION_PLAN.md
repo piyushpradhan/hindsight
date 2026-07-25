@@ -1,8 +1,10 @@
 # Hindsight — Finished Product Implementation Plan
 
-Status: phases 0–4 implemented; live SigNoz rule installation/fixture capture
-awaits an operator API key. Phases 5–8 remain planned.  
-Based on: repository and live SigNoz audit completed 2026-07-24
+Status: phases 0–4 implemented; the core Phase 5 comparison/Studio work,
+loopback API hardening, idempotent SigNoz provisioning, and a verified local
+Ollama path are implemented. Remaining unchecked items are explicit release
+and production-operations work rather than hidden demo claims.
+Based on: repository and live SigNoz audit completed 2026-07-25
 
 ## 1. Target
 
@@ -270,7 +272,7 @@ Goal: make Incident → Fork → Verified Resolution the actual product spine.
       trace ID and run ID.
 - [x] Keep metric alerts for fleet/SLO notifications; route them to a separate
       aggregate finding or notification flow rather than inventing a trace ID.
-- [ ] Provision and test alert rules against the selected SigNoz version.
+- [x] Provision and test alert rules against the selected SigNoz version.
 
 ### Webhook and incident state
 
@@ -313,40 +315,40 @@ states.
 
 ### Compare
 
-- [ ] Show the shared prefix once and compare the original branch with the fork
+- [x] Show the shared prefix once and compare the original branch with the fork
       from the preserved fork point.
-- [ ] Diff prompt/message, model, parameters, tool result, terminal output,
+- [x] Diff prompt/message, model, parameters, tool result, terminal output,
       tokens, duration, and known cost.
-- [ ] Use `improved`, `unchanged`, `regressed`, and `not_verifiable` verdicts.
-- [ ] Calculate saved execution only from measured values. For v1, compare the
+- [x] Use `improved`, `unchanged`, `regressed`, and `not_verifiable` verdicts.
+- [x] Calculate saved execution only from measured values. For v1, compare the
       original full-run cost with the fork branch cost and label excluded
       recorded-prefix cost clearly. Never show savings when either cost is
       unknown.
 
 ### Studio
 
-- [ ] Drive mutation controls from runner capabilities.
-- [ ] Show checkpoint completeness, schema version, agent revision, runner
+- [x] Drive mutation controls from runner capabilities.
+- [x] Show checkpoint completeness, schema version, agent revision, runner
       status, and payload redaction/truncation before enabling a fork.
-- [ ] Mark every displayed step as recorded, mocked, or live.
-- [ ] Show actionable errors for SigNoz connectivity, missing payloads,
+- [x] Mark every displayed step as recorded, mocked, or live.
+- [x] Show actionable errors for SigNoz connectivity, missing payloads,
       unsupported mutations, runner failure, and verification failure.
 - [ ] Poll existing endpoints for fork/incident completion; add streaming only
       if polling creates a measured problem.
-- [ ] Make the incident page lead directly to the linked run, suggested fork
+- [x] Make the incident page lead directly to the linked run, suggested fork
       point, fork attempt, compare result, and evidence-backed postmortem.
 - [ ] Add loading, empty, keyboard, focus, contrast, and narrow-screen states to
       the core Run, Incident, Fork, and Compare flows.
 
 ### Dashboards
 
-- [ ] Replace the current fake MTTR calculation with measured incident
+- [x] Replace the current fake MTTR calculation with measured incident
       resolution duration.
-- [ ] Replace the current “dollars saved” formula with recorded fork comparison
+- [x] Replace the current “dollars saved” formula with recorded fork comparison
       values, or remove the panel until those metrics exist.
-- [ ] Build reliability panels only from emitted metrics: runs, outcome rate,
+- [x] Build reliability panels only from emitted metrics: runs, outcome rate,
       latency, tokens, known cost, tool errors, and loop score.
-- [ ] Build Hindsight operations panels from emitted engine meta-metrics.
+- [x] Build Hindsight operations panels from emitted engine meta-metrics.
 - [ ] Include config version and install status in dashboard metadata.
 
 Acceptance gate:
@@ -361,9 +363,9 @@ Acceptance gate:
 Goal: make the self-hosted product safe to expose inside an engineering
 network.
 
-- [ ] Require an API token for engine endpoints; allow an explicit
+- [x] Require an API token for engine endpoints; allow an explicit
       localhost-only development bypass.
-- [ ] Use a CORS allowlist and bind to loopback by default.
+- [x] Use a CORS allowlist and bind to loopback by default.
 - [ ] Validate request bodies, mutation sizes, identifiers, runner responses,
       and webhook bodies. Add conservative body and request time limits.
 - [ ] Keep provider, SigNoz, webhook, and runner secrets out of payload logs,
@@ -393,24 +395,24 @@ Acceptance gate:
 
 Goal: make setup repeatable from a clean checkout.
 
-- [ ] Add `.env.example` with every required value and a safe local default
+- [x] Add `.env.example` with every required value and a safe local default
       where one exists.
 - [ ] Add `make doctor` to validate Node/pnpm, SigNoz version/health/API key,
       OTLP ingestion, replay-engine auth, and runner configuration.
-- [ ] Make `make demo` load configuration, install/build, wait for health, and
+- [x] Make `make demo` load configuration, install/build, wait for health, and
       fail on timeout rather than sleeping optimistically.
-- [ ] Provision the notification channel, dashboards, and alert rules
+- [x] Provision the notification channel, dashboards, and alert rules
       idempotently through the tested SigNoz API.
 - [ ] Seed a uniquely identified failing run and wait for the real alert-created
       incident. Do not insert an incident directly.
-- [ ] Run the reference fork and verification path as a smoke test, while
+- [x] Run the reference fork and verification path as a smoke test, while
       leaving the resulting incident and traces available for exploration.
 - [ ] Add `make down` cleanup based on recorded PIDs or compose ownership rather
       than broad `pkill` patterns.
 - [ ] Add a production deployment guide for connecting an existing SigNoz,
       running engine/Studio, registering a runner, configuring auth, and
       importing/provisioning config.
-- [ ] Rewrite the README walkthrough from the verified clean-shell flow and
+- [x] Rewrite the README walkthrough from the verified clean-shell flow and
       replace TODO/fabricated screenshots with captured results.
 - [ ] Add a compatibility note covering tested SigNoz and telemetry schema
       versions plus the upgrade procedure.
@@ -428,7 +430,7 @@ Goal: prove the product, not just its components.
 
 ### Automated coverage
 
-- [ ] Keep unit tests for hashing, payload policy, graph reconstruction,
+- [x] Keep unit tests for hashing, payload policy, graph reconstruction,
       mutation validation, compare logic, webhook parsing, and incident state.
 - [ ] Add a recorder → OTLP fixture → replay-engine contract test.
 - [ ] Add a live SigNoz integration suite that records and queries traces, logs,

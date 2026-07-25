@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { RunGraph } from "@hindsight/shared";
+import type { CheckpointReport, RunGraph, RunSummary } from "@hindsight/shared";
 import { api, signozTraceUrl } from "../api";
 import { shortId } from "../format";
 import { Badge, OutcomeBadge } from "../components/Badge";
@@ -8,6 +8,29 @@ import { ErrorNote } from "../components/ErrorNote";
 import { StepScrubber } from "../components/StepScrubber";
 import { StepCard } from "../components/StepCard";
 import { ForkPanel } from "../components/ForkPanel";
+
+export function runEvidenceLabels(
+  run: RunSummary,
+  checkpoint: CheckpointReport | undefined,
+): string[] {
+  return [
+    "recorded telemetry",
+    ...(run.agentRevision ? [`agent revision · ${run.agentRevision}`] : []),
+    ...(checkpoint
+      ? [
+          checkpoint.complete
+            ? `checkpoint complete${
+                checkpoint.schemaVersion ? ` · schema version ${checkpoint.schemaVersion}` : ""
+              }`
+            : `checkpoint incomplete${
+                checkpoint.schemaVersion ? ` · schema version ${checkpoint.schemaVersion}` : ""
+              } · ${checkpoint.issues.length} ${
+                checkpoint.issues.length === 1 ? "issue" : "issues"
+              }`,
+        ]
+      : []),
+  ];
+}
 
 export function RunDetailScreen() {
   const { traceId = "" } = useParams();
@@ -139,6 +162,20 @@ export function RunDetailScreen() {
           <div className="summary-strip">
             <OutcomeBadge outcome={run.outcome} />
             <span className="run-stat">{steps.length} {steps.length === 1 ? "step" : "steps"}</span>
+            {runEvidenceLabels(run, graph.checkpoint).map((label) => (
+              <Badge
+                key={label}
+                tone={
+                  label.startsWith("checkpoint complete")
+                    ? "ok"
+                    : label.startsWith("checkpoint incomplete")
+                      ? "ember"
+                      : "muted"
+                }
+              >
+                {label}
+              </Badge>
+            ))}
             {run.forkOf && (
               <Badge tone="ember">
                 <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>

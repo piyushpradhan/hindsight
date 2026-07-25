@@ -8,12 +8,12 @@ Completed in the repository:
 - real SigNoz screenshots for traces, correlated logs, and metrics;
 - AI-assistance disclosure;
 - a credential-aware `make doctor`;
+- a live SigNoz alert → incident → fork → verified-resolution run;
+- verified local Ollama, runner, replay-engine, Studio, and Taskline services;
 - generated logs and SQLite sidecars removed from version control.
 
-Still requires the project owner's accounts or approval:
+Still requires the project owner's publishing accounts or approval:
 
-1. create/copy a SigNoz service-account key into `.env`;
-2. save the authenticated webhook channel and install the two log alert rules;
-3. record the live alert → incident → fork → verified-resolution footage;
-4. publish the blog and YouTube video;
-5. replace the bracketed links in `form-answers.md` and submit the Google Form.
+1. publish the blog and YouTube video;
+2. replace their two bracketed links in `form-answers.md`;
+3. submit the Google Form.

@@ -1,5 +1,5 @@
 {
-  "//": "UNINSTALLED TEMPLATE. Fleet-only notification; no incident webhook because aggregate metrics have no authoritative trace_id.",
+  "//": "UNINSTALLED TEMPLATE. Fleet-only notification; the installer supplies SigNoz's required sink, but Hindsight does not create incidents without an authoritative trace_id.",
   "hindsightInstallStatus": "template_uninstalled",
   "alert": "Hindsight: cost-per-run spike (per agent)",
   "alertType": "METRIC_BASED_ALERT",

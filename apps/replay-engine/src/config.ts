@@ -1,7 +1,12 @@
 import { DEFAULTS } from "@hindsight/shared";
+import { timingSafeEqual } from "node:crypto";
 
 export interface Config {
+  host: string;
   port: number;
+  corsOrigins: string[];
+  apiToken?: string;
+  allowUnauthenticatedLocalhost: boolean;
   signozUrl: string;
   signozApiKey?: string;
   sqlitePath: string;
@@ -25,7 +30,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`invalid PORT: ${env.PORT}`);
   }
   return {
+    host: env.HOST?.trim() || "127.0.0.1",
     port,
+    corsOrigins: parseCorsOrigins(env.HINDSIGHT_CORS_ORIGINS),
+    apiToken: env.HINDSIGHT_API_TOKEN?.trim() || undefined,
+    allowUnauthenticatedLocalhost: parseBoolean(
+      env.HINDSIGHT_ALLOW_UNAUTHENTICATED_LOCALHOST,
+      false,
+    ),
     signozUrl: (env.SIGNOZ_URL ?? DEFAULTS.signozUrl).replace(/\/$/, ""),
     signozApiKey: env.SIGNOZ_API_KEY?.trim() || undefined,
     sqlitePath: env.SQLITE_PATH ?? "./hindsight.db",
@@ -36,6 +48,62 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     verificationTimeoutMs: positiveInt(env.HINDSIGHT_VERIFICATION_TIMEOUT_MS, 10_000),
     signozWebhookSecret: env.SIGNOZ_WEBHOOK_SECRET?.trim() || undefined,
   };
+}
+
+export function requiresApiAuth(method: string, url: string): boolean {
+  const path = url.split("?", 1)[0];
+  return method !== "OPTIONS" && path.startsWith("/api/") && path !== "/api/health";
+}
+
+export function isApiRequestAuthorized(
+  config: Pick<Config, "host" | "apiToken" | "allowUnauthenticatedLocalhost">,
+  authorization: string | undefined,
+  remoteAddress: string,
+): boolean {
+  const bearer = authorization?.match(/^Bearer ([^\s]+)$/i)?.[1];
+  if (config.apiToken && bearer && sameSecret(bearer, config.apiToken)) return true;
+  return (
+    config.allowUnauthenticatedLocalhost &&
+    isLoopbackAddress(config.host) &&
+    isLoopbackAddress(remoteAddress)
+  );
+}
+
+function parseCorsOrigins(raw: string | undefined): string[] {
+  const origins = raw?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ];
+  for (const origin of origins) {
+    const url = new URL(origin);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.origin !== origin ||
+      url.username ||
+      url.password
+    ) {
+      throw new Error(`invalid CORS origin: ${origin}`);
+    }
+  }
+  return [...new Set(origins)];
+}
+
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined) return fallback;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw new Error(`invalid boolean: ${raw}`);
+}
+
+function isLoopbackAddress(address: string): boolean {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "").replace(/^::ffff:/, "");
+  return normalized === "localhost" || normalized === "::1" || normalized.startsWith("127.");
+}
+
+function sameSecret(received: string, expected: string): boolean {
+  const left = Buffer.from(received);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 function parseRunners(raw: string | undefined): Record<string, RunnerConfig> {

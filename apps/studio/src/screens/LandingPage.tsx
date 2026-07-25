@@ -22,10 +22,10 @@ export function LandingPage() {
           </div>
         </div>
 
-        <div className="dashboard-frame" aria-label="Hindsight product preview">
+        <div className="dashboard-frame" aria-label="Illustrative Hindsight product preview">
           <div className="dashboard-chrome">
             <span className="window-dots" aria-hidden="true"><i /><i /><i /></span>
-            <span>HINDSIGHT / CAUSAL TRACE</span>
+            <span>ILLUSTRATIVE / CAUSAL TRACE</span>
             <span className="dashboard-live"><i /> FAILURE</span>
           </div>
           <div className="preview-run">
@@ -94,7 +94,7 @@ export function LandingPage() {
               <p>Requests, responses, tools, latency, tokens, and errors stay aligned by step.</p>
             </div>
             <div className="workflow-evidence">
-              <span>TRACE 9F1C2B7A</span>
+              <span>ILLUSTRATIVE TRACE</span>
               <strong>8 aligned steps</strong>
             </div>
           </article>
@@ -126,7 +126,7 @@ export function LandingPage() {
       <section className="evidence-section">
         <div className="evidence-panel">
           <div className="evidence-head">
-            <span>COUNTERFACTUAL / 6C21A9B</span>
+            <span>ILLUSTRATIVE / COUNTERFACTUAL</span>
             <span className="positive-text">FIX VERIFIED</span>
           </div>
           <div className="evidence-outcome">
@@ -171,7 +171,6 @@ export function LandingPage() {
         <nav aria-label="Footer navigation">
           <a href="#product">Product</a>
           <a href="#workflow">Workflow</a>
-          <Link to="/incidents">Open app</Link>
           <a href="https://github.com/piyushpradhan/hindsight" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
       </footer>

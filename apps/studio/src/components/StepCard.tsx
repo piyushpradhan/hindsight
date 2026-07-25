@@ -64,6 +64,31 @@ function ToolBody({ step }: { step: RunStep }) {
   );
 }
 
+export function stepEvidenceLabels(step: RunStep): string[] {
+  const labels: string[] = [];
+  if (step.payloadPresent === true) {
+    labels.push(
+      step.provider === "mock"
+        ? "recorded · mock provider"
+        : step.provider
+          ? `recorded · live provider ${step.provider}`
+          : `recorded ${step.kind} result`,
+    );
+  } else if (step.provider) {
+    labels.push(step.provider === "mock" ? "mock provider" : `live provider · ${step.provider}`);
+  }
+  if (step.payloadRedacted) labels.push("payload redacted");
+  if (step.payloadTruncated) labels.push("payload truncated");
+  if (
+    step.payloadPresent === true &&
+    step.payloadRedacted === false &&
+    step.payloadTruncated === false
+  ) {
+    labels.push("payload complete");
+  }
+  return labels;
+}
+
 export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, registerRef, forkPanel }: Props) {
   // Payloads are long, so a step stays collapsed to its head row unless it's
   // the one you're looking at or it failed — the failed step (which is selected
@@ -89,6 +114,22 @@ export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, reg
         {step.inputTokens !== undefined && (
           <Badge>{fmtTokens(step.inputTokens)}→{fmtTokens(step.outputTokens ?? 0)} tok</Badge>
         )}
+        {stepEvidenceLabels(step).map((label) => (
+          <Badge
+            key={label}
+            tone={
+              label === "payload complete"
+                ? "ok"
+                : label.includes("mock") ||
+                    label.includes("redacted") ||
+                    label.includes("truncated")
+                  ? "ember"
+                  : "muted"
+            }
+          >
+            {label}
+          </Badge>
+        ))}
         <Badge>{fmtMs(step.latencyMs)}</Badge>
         <Badge>{fmtUsd(step.costUsd)}</Badge>
         {step.error && <Badge tone="ember">error</Badge>}

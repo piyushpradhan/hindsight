@@ -75,30 +75,25 @@ make demo
 ```
 
 `make doctor` verifies Node, pnpm, the Foundry files, SigNoz v0.133.x, OTLP
-ingestion, and both required credentials. `make demo` builds the workspace,
-waits for the reference runner (`:4124`), replay-engine (`:4123`), Studio
-(`:5173`), and Taskline (`:4174`) to become healthy, then records mixed demo
-runs.
+ingestion, and both required credentials. `make demo` idempotently provisions
+the notification channel, four alert rules, and two dashboards; builds the
+workspace; waits for the reference runner (`:4124`), replay-engine (`:4123`),
+Studio (`:5173`), and Taskline (`:4174`) to become healthy; then records mixed
+demo runs.
 
 An incident appears only when an installed trace-correlated SigNoz rule
 delivers an authenticated webhook. Hindsight never inserts a fake incident in
 the main demo path.
 
-The JSON under `infra/` is versioned configuration, not proof of installation.
-Every file starts as `template_uninstalled`; confirm imported resources through
-the SigNoz API:
-
-- **Dashboards** — SigNoz UI → Dashboards → *Import JSON* → `infra/dashboards/agent-reliability.json` and `infra/dashboards/hindsight-ops.json`.
-- **Run incident alerts** — create a webhook channel named
-  `hindsight-replay-engine` for
-  `http://host.docker.internal:4123/hooks/signoz` when SigNoz runs in Docker
-  (`http://localhost:4123/hooks/signoz` otherwise). Leave the username empty,
-  use `SIGNOZ_WEBHOOK_SECRET` as the password, then submit
-  `infra/alerts/run-failures.json` and `loop-tripwire.json` to SigNoz
-  `POST /api/v2/rules`.
-- **Fleet notifications** — `cost-spike.json` and `latency-drift.json` have no
-  Hindsight incident channel because an aggregate metric has no authoritative
-  trace ID.
+The JSON under `infra/` is versioned source configuration. Repository copies
+remain marked `template_uninstalled`; `make provision` strips that
+template-only metadata and installs missing resources through the tested
+SigNoz API. Existing resources are detected by their stable names, and known
+channel drift is corrected without duplicating them. Use
+`make provision-dry-run` to inspect the plan. SigNoz v0.133 requires every rule
+to have a channel, so the fleet-only cost and latency rules use the same
+authenticated webhook sink. The engine acknowledges those aggregate
+notifications but never creates an incident without an authoritative trace ID.
 
 Other targets: `make up` (start stack), `make seed` (demo data), `make dev`
 (watch mode), `make down` (stop app processes; SigNoz untouched).
@@ -114,8 +109,8 @@ The captures below show real OTLP data, not fixture UI.
 
 ![Payload and run-failure logs correlated to the failed trace](docs/assets/signoz-correlated-logs.png)
 
-`pnpm build`, all 53 unit tests, and `pnpm validate:infra` pass on the submitted
-revision.
+The full test suite, `pnpm typecheck`, `pnpm build`, and
+`pnpm validate:infra` pass on the submitted revision.
 
 ### Taskline: AI to-do agent demo
 
@@ -129,12 +124,16 @@ key. Taskline uses a JSON action protocol because Gemma 3 1B does not expose
 native tool calls. Set `HINDSIGHT_TODO_PROVIDER=offline` for the deterministic
 fallback, or use `anthropic` plus `ANTHROPIC_API_KEY`.
 
-To record against the real provider path instead of the explicit offline mock:
+To prove the complete local non-mock path, including verified incident
+resolution and `provider=ollama` evidence on the fork trace:
 
 ```bash
-ANTHROPIC_API_KEY='...' HINDSIGHT_DEMO_PROVIDER=anthropic \
-  pnpm --filter @hindsight/demo-agents demo
+pnpm --filter @hindsight/demo-agents verify:ollama
 ```
+
+The command exits non-zero unless Taskline is using Ollama, the fork is linked
+and verified, the incident resolves, and no fork LLM step reports the mock
+provider.
 
 ---
 
@@ -168,13 +167,19 @@ The exact three-minute recording path is in
   incident.
 - **Config-as-code.** Dashboard and alert templates target SigNoz v0.133.x.
   `pnpm validate:infra` checks their `hindsight.*` names against the shared
-  telemetry contract. Templates remain uninstalled until SigNoz confirms them.
+  telemetry contract. `make provision` installs them idempotently.
+- **Local security by default.** The engine binds to loopback, uses an explicit
+  Studio CORS allowlist, and requires bearer authentication unless the
+  localhost-only development bypass is explicitly enabled. A remote bind must
+  set `HINDSIGHT_API_TOKEN` and disable that bypass.
 
 ---
 
 ## Limitations & non-goals
 
-- **Not a SigNoz replacement or installer.** Hindsight assumes a running SigNoz (managed under `pours/deployment/`); it does not stand one up.
+- **Not a SigNoz replacement.** Hindsight assumes a running SigNoz (managed
+  under `pours/deployment/`). It provisions Hindsight resources but does not
+  stand up SigNoz itself.
 - **Replay and fork require complete evidence.** Missing, redacted, truncated,
   mismatched, or expired payload logs fail closed; they never fall through to
   live execution.

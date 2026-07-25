@@ -205,11 +205,41 @@ export interface ReplayResult {
 /* -------------------------------- compare ---------------------------------- */
 
 export type AlignmentStatus = "same" | "changed" | "added" | "removed";
+export type ComparisonVerdict =
+  | "improved"
+  | "unchanged"
+  | "regressed"
+  | "not_verifiable";
+export type ComparedField =
+  | "prompt"
+  | "model"
+  | "params"
+  | "tool"
+  | "output"
+  | "tokens"
+  | "duration"
+  | "cost";
+export type FieldComparisonStatus =
+  | "same"
+  | "changed"
+  | "added"
+  | "removed";
+
+export interface FieldComparison {
+  field: ComparedField;
+  status: FieldComparisonStatus;
+  original?: string | number;
+  fork?: string | number;
+}
 
 export interface StepAlignment {
   originalIndex?: number;
   forkIndex?: number;
   status: AlignmentStatus;
+  /** True when the fork inherited this immutable step rather than re-executing it. */
+  sharedPrefix?: boolean;
+  /** Recorded fields compared for this aligned pair. */
+  fields?: FieldComparison[];
 }
 
 export interface CompareResult {
@@ -221,6 +251,11 @@ export interface CompareResult {
   deltaSteps: number;
   outcomeChanged: boolean;
   alignments: StepAlignment[];
+  /** Present for lineage-aware comparisons; optional for older API fixtures. */
+  branchPoint?: number;
+  sharedPrefixSteps?: number;
+  verdict?: ComparisonVerdict;
+  verdictReason?: string;
   /** Unified-ish text diff of final outputs (plain string, may be empty). */
   outputDiff: string;
 }

@@ -1,19 +1,19 @@
 # Agents of SigNoz submission
 
-Use this as the source of truth while filling the form. Replace the three
-bracketed links and confirm the personal details before submitting.
+Use this as the source of truth while filling the form. Replace the two
+publication links before submitting.
 
 ## Email
 
-`[YOUR EMAIL]`
+`piyushpradhan3.14@gmail.com`
 
 ## Team name
 
-`[YOUR NAME if participating solo, otherwise the team name]`
+`Hindsight`
 
 ## Person submitting
 
-`[YOUR FULL NAME]`
+`Piyush Pradhan`
 
 ## Track
 

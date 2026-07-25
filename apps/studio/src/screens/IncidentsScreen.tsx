@@ -5,9 +5,17 @@ import type { Incident, IncidentStatus } from "@hindsight/shared";
 import { api } from "../api";
 import { shortId, timeAgo } from "../format";
 import { IncidentStatusBadge, SeverityBadge } from "../components/Badge";
-import { TraceLookup } from "../components/TraceLookup";
 import { ErrorNote } from "../components/ErrorNote";
 import { PostmortemModal } from "../components/PostmortemModal";
+import {
+  compareValues,
+  MobileSort,
+  nextSort,
+  SortableHeader,
+  type SortState,
+} from "../components/SortableHeader";
+
+type IncidentSortKey = "incident" | "severity" | "agent" | "detected" | "status";
 
 /** Plain status transitions the engine allows (apps/replay-engine incidents/store.ts). */
 function transitionsFor(status: IncidentStatus): Array<{ label: string; to: IncidentStatus }> {
@@ -40,6 +48,13 @@ export function IncidentsScreen() {
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("all");
+  const [severity, setSeverity] = useState("all");
+  const [sort, setSort] = useState<SortState<IncidentSortKey>>({
+    key: "detected",
+    direction: "desc",
+  });
   const [postmortemId, setPostmortemId] = useState<string | null>(null);
   const [dismissTarget, setDismissTarget] = useState<Incident | null>(null);
   const [dismissReason, setDismissReason] = useState("");
@@ -110,6 +125,51 @@ export function IncidentsScreen() {
 
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
+  const needle = q.trim().toLowerCase();
+  const severityOptions = [
+    ...new Set((incidents ?? []).map((incident) => incident.severity ?? "unknown")),
+  ].sort();
+  const filteredIncidents = (incidents ?? [])
+    .filter(
+      (incident) =>
+        (status === "all" || incident.status === status) &&
+        (severity === "all" || (incident.severity ?? "unknown") === severity) &&
+        (!needle ||
+          [
+            incident.alertName,
+            incident.agentId,
+            incident.traceId,
+            incident.status,
+            incident.severity,
+            incident.notes,
+          ].some((value) => value?.toLowerCase().includes(needle))),
+    )
+    .sort((a, b) => {
+      const value = (incident: Incident) => {
+        switch (sort.key) {
+          case "incident":
+            return incident.alertName;
+          case "severity":
+            return incident.severity;
+          case "agent":
+            return incident.agentId;
+          case "detected":
+            return Date.parse(incident.createdAt);
+          case "status":
+            return incident.status;
+        }
+      };
+      return compareValues(value(a), value(b), sort.direction);
+    });
+  const sortHeader = (key: IncidentSortKey, label: string) => (
+    <SortableHeader
+      label={label}
+      active={sort.key === key}
+      direction={sort.direction}
+      onSort={() => setSort((current) => nextSort(current, key))}
+    />
+  );
+
   return (
     <div className="page incidents-page">
       <div className="page-head incidents-head">
@@ -172,33 +232,80 @@ export function IncidentsScreen() {
               <span className="queue-count">
                 {incidents.filter((incident) => incident.status === "open").length} open
               </span>
-              <div className="trace-search" aria-label="Open trace by ID">
-                <TraceLookup />
-              </div>
             </div>
           </div>
-          <div className="table-shell">
-            <table className="table incident-table">
-              <colgroup>
-                <col className="incident-column" />
-                <col className="severity-column" />
-                <col className="agent-column" />
-                <col className="detected-column" />
-                <col className="status-column" />
-                <col className="actions-column" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Incident</th>
-                  <th>Severity</th>
-                  <th>Agent</th>
-                  <th>Detected</th>
-                  <th>Status</th>
-                  <th>Next step</th>
-                </tr>
-              </thead>
-              <tbody>
-                {incidents.map((inc) => {
+          <div className="table-controls">
+            <input
+              className="input table-search"
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="Search by incident title or trace ID…"
+              spellCheck={false}
+              aria-label="Search incidents"
+            />
+            <select
+              className="input table-filter"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              aria-label="Filter incidents by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="open">Open</option>
+              <option value="verifying">Verifying</option>
+              <option value="resolved">Resolved</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+            <select
+              className="input table-filter"
+              value={severity}
+              onChange={(event) => setSeverity(event.target.value)}
+              aria-label="Filter incidents by severity"
+            >
+              <option value="all">All severities</option>
+              {severityOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <MobileSort
+              label="Sort incidents by"
+              options={[
+                { key: "incident", label: "incident" },
+                { key: "severity", label: "severity" },
+                { key: "agent", label: "agent" },
+                { key: "detected", label: "detected" },
+                { key: "status", label: "status" },
+              ]}
+              sort={sort}
+              onChange={setSort}
+            />
+          </div>
+          {filteredIncidents.length === 0 ? (
+            <div className="loading">no incidents match these filters</div>
+          ) : (
+            <div className="table-shell">
+              <table className="table incident-table">
+                <colgroup>
+                  <col className="incident-column" />
+                  <col className="severity-column" />
+                  <col className="agent-column" />
+                  <col className="detected-column" />
+                  <col className="status-column" />
+                  <col className="actions-column" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {sortHeader("incident", "Incident")}
+                    {sortHeader("severity", "Severity")}
+                    {sortHeader("agent", "Agent")}
+                    {sortHeader("detected", "Detected")}
+                    {sortHeader("status", "Status")}
+                    <th>Next step</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIncidents.map((inc) => {
                   const transitionActions = transitionsFor(inc.status);
                   const canPostmortem = inc.status === "resolved" && inc.verification?.verified;
                   const actionCount = transitionActions.length + (canPostmortem ? 1 : 0);
@@ -273,10 +380,11 @@ export function IncidentsScreen() {
                     </td>
                   </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

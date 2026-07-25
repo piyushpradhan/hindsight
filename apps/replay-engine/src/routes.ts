@@ -500,18 +500,19 @@ async function loadGraph(signoz: SignozClient, traceId: string): Promise<RunGrap
   return buildRunGraph(traceId, spans, payloads, events);
 }
 
-async function waitForGraph(
+export async function waitForGraph(
   signoz: SignozClient,
   traceId: string,
   timeoutMs: number,
 ): Promise<RunGraph | null> {
   const deadline = Date.now() + timeoutMs;
+  let latest: RunGraph | null = null;
   do {
-    const graph = await loadGraph(signoz, traceId);
-    if (graph) return graph;
+    latest = await loadGraph(signoz, traceId);
+    if (latest?.checkpoint?.complete) return latest;
     await new Promise((resolve) => setTimeout(resolve, 250));
   } while (Date.now() < deadline);
-  return null;
+  return latest;
 }
 
 function webhookCredential(authorization: string | undefined): string | undefined {

@@ -10,7 +10,7 @@ import {
 } from "@hindsight/shared";
 import type { Config } from "./config.js";
 import { IncidentStore } from "./incidents/store.js";
-import { registerRoutes, type ForkExecutor } from "./routes.js";
+import { registerRoutes, waitForGraph, type ForkExecutor } from "./routes.js";
 import {
   TRACE_ID,
   fixturePayloadLogs,
@@ -22,6 +22,19 @@ import type { PayloadLogInput, SpanInput } from "./rungraph/builder.js";
 const FORK_TRACE = "22222222222222222222222222222222";
 const MUTATION = { type: "model_swap" as const, model: "claude-sonnet-4-5" };
 const MUTATION_HASH = "verified-mutation";
+
+test("fork verification waits for eventually consistent payload evidence", async () => {
+  const signoz = new SignozClient({ baseUrl: "http://unused", apiKey: "test" });
+  let payloadQueries = 0;
+  signoz.getSpansForTrace = async () => fixtureSpans();
+  signoz.getPayloadLogs = async () =>
+    ++payloadQueries === 1 ? [] : fixturePayloadLogs();
+  signoz.getRunEvents = async () => [];
+
+  const graph = await waitForGraph(signoz, TRACE_ID, 1_000);
+  assert.equal(graph?.checkpoint?.complete, true);
+  assert.equal(payloadQueries, 2);
+});
 
 test("incident fork resolves only after linked fork telemetry is verified", async (t) => {
   const incidents = new IncidentStore(":memory:");
@@ -210,7 +223,11 @@ function forkSpans(incidentId: string): SpanInput[] {
 
 function config(): Config {
   return {
+    host: "127.0.0.1",
     port: 4123,
+    corsOrigins: ["http://localhost:5173"],
+    apiToken: "test-token",
+    allowUnauthenticatedLocalhost: false,
     signozUrl: "http://localhost:8080",
     signozApiKey: "test",
     sqlitePath: ":memory:",

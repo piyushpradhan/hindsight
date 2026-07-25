@@ -8,6 +8,8 @@
     "typecheck": "pnpm -r typecheck",
     "dev": "pnpm -r --parallel dev",
     "doctor": "tsx scripts/doctor.ts",
+    "provision:signoz": "tsx scripts/provision-signoz.ts",
+    "test:provision": "tsx --test scripts/provision-signoz.test.ts",
     "validate:infra": "tsx scripts/validate-infra.ts"
   },
   "devDependencies": {

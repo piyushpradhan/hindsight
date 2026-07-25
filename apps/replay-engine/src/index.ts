@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { loadConfig } from "./config.js";
+import { isApiRequestAuthorized, loadConfig, requiresApiAuth } from "./config.js";
 import { IncidentStore } from "./incidents/store.js";
 import { initTelemetry, registerTraceHooks } from "./otel.js";
 import { registerRoutes } from "./routes.js";
@@ -22,13 +22,24 @@ if (!signoz.authed) {
 }
 
 const app = Fastify({ logger: true });
-await app.register(cors, { origin: true });
+await app.register(cors, { origin: config.corsOrigins });
 const forkExecutor = new HttpForkExecutor(signoz, {
   runners: config.runners,
   timeoutMs: config.runnerTimeoutMs,
 });
 
 registerTraceHooks(app, telemetry);
+app.addHook("onRequest", async (request, reply) => {
+  if (
+    requiresApiAuth(request.method, request.url) &&
+    !isApiRequestAuthorized(config, request.headers.authorization, request.ip)
+  ) {
+    return reply
+      .code(401)
+      .header("www-authenticate", "Bearer")
+      .send({ error: "api_unauthorized" });
+  }
+});
 registerRoutes(app, { config, signoz, incidents, forkExecutor, metrics: telemetry.metrics });
 
 const shutdown = async (signal: string) => {
@@ -41,4 +52,4 @@ const shutdown = async (signal: string) => {
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-await app.listen({ port: config.port, host: "0.0.0.0" });
+await app.listen({ port: config.port, host: config.host });

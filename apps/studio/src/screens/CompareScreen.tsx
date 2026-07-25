@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import type {
   CompareResult,
+  FieldComparison,
   IncidentVerification,
   RunGraph,
   RunStep,
 } from "@hindsight/shared";
 import { api, signozTraceUrl } from "../api";
 import { fmtMs, fmtTokens, fmtUsd, shortId } from "../format";
-import { OutcomeBadge } from "../components/Badge";
+import { Badge, OutcomeBadge, type BadgeTone } from "../components/Badge";
 import { ErrorNote } from "../components/ErrorNote";
 import { MiniStepCell } from "../components/MiniStepCell";
 
@@ -43,6 +44,31 @@ function DeltaStat({ label, value, suffix }: { label: string; value: number | nu
       <div className={`d-value ${cls}`}>{text}</div>
     </div>
   );
+}
+
+function verdictCopy(verdict: NonNullable<CompareResult["verdict"]>): {
+  label: string;
+  title: string;
+  tone: BadgeTone;
+} {
+  switch (verdict) {
+    case "improved":
+      return { label: "improved", title: "The tested branch improved the run", tone: "ok" };
+    case "unchanged":
+      return { label: "unchanged", title: "No measurable change", tone: "muted" };
+    case "regressed":
+      return { label: "regressed", title: "The tested branch regressed the run", tone: "ember" };
+    case "not_verifiable":
+      return {
+        label: "not verifiable",
+        title: "No defensible overall verdict",
+        tone: "muted",
+      };
+  }
+}
+
+function fieldValue(value: FieldComparison["original"]): string {
+  return value === undefined ? "not recorded" : String(value);
 }
 
 export function CompareScreen() {
@@ -113,9 +139,13 @@ export function CompareScreen() {
 
   const origSteps = byIndex(origGraph.steps);
   const forkSteps = byIndex(forkGraph.steps);
-  const title = compare.outcomeChanged
-    ? `Outcome changed: ${compare.original.outcome} → ${compare.fork.outcome}`
-    : `Outcome unchanged: ${compare.fork.outcome}`;
+  const verdict = compare.verdict ?? "not_verifiable";
+  const verdictText = verdictCopy(verdict);
+  const fieldChanges = compare.alignments.flatMap((alignment) =>
+    (alignment.fields ?? [])
+      .filter((field) => field.status !== "same")
+      .map((field) => ({ alignment, field })),
+  );
 
   return (
     <div className="page compare-page">
@@ -147,11 +177,18 @@ export function CompareScreen() {
 
       <div className="card verdict-card">
         <div>
-          <div className="verdict-title">{title}</div>
+          <div className="verdict-title">{verdictText.title}</div>
           <div className="verdict-outcomes">
+            <Badge tone={verdictText.tone}>{verdictText.label}</Badge>
             <OutcomeBadge outcome={compare.original.outcome} />
             <span className="verdict-arrow">── test ──▶</span>
             <OutcomeBadge outcome={compare.fork.outcome} />
+          </div>
+          <div className="mini-meta">
+            {compare.verdictReason ?? "This comparison predates recorded verdict evidence."}
+            {compare.branchPoint !== undefined
+              ? ` Branch point #${compare.branchPoint}; ${compare.sharedPrefixSteps ?? 0} inherited prefix steps.`
+              : ""}
           </div>
         </div>
         <div className="delta-grid">
@@ -174,7 +211,12 @@ export function CompareScreen() {
       <div className="align-grid">
         {compare.alignments.map((a, i) => {
           const oStep = a.originalIndex !== undefined ? origSteps.get(a.originalIndex) : undefined;
-          const fStep = a.forkIndex !== undefined ? forkSteps.get(a.forkIndex) : undefined;
+          const fStep = a.sharedPrefix
+            ? oStep
+            : a.forkIndex !== undefined
+              ? forkSteps.get(a.forkIndex)
+              : undefined;
+          const changedFields = (a.fields ?? []).filter((field) => field.status !== "same");
           return [
             <MiniStepCell
               key={`o-${i}`}
@@ -183,7 +225,8 @@ export function CompareScreen() {
               emptyLabel="not present in original"
             />,
             <span key={`s-${i}`} className={`status-tag status-${a.status}`}>
-              {a.status}
+              {a.sharedPrefix ? "shared" : a.status}
+              {changedFields.length ? ` · ${changedFields.map((field) => field.field).join(", ")}` : ""}
             </span>,
             <MiniStepCell
               key={`f-${i}`}
@@ -194,6 +237,25 @@ export function CompareScreen() {
           ];
         })}
       </div>
+
+      {fieldChanges.length > 0 && (
+        <>
+          <div className="section-label">recorded field changes</div>
+          <div className="card">
+            <ul className="field-change-list">
+              {fieldChanges.map(({ alignment, field }, index) => (
+                <li key={`${alignment.originalIndex}-${alignment.forkIndex}-${field.field}-${index}`}>
+                  <code>
+                    step {alignment.originalIndex ?? "—"} → {alignment.forkIndex ?? "—"} ·{" "}
+                    {field.field} · {field.status}
+                  </code>
+                  : {fieldValue(field.original)} → {fieldValue(field.fork)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
 
       {compare.outputDiff && (
         <>

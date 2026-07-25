@@ -3,8 +3,8 @@
 # NOTE: SigNoz itself is NOT managed here. A self-hosted SigNoz already runs at
 # http://localhost:8080 and its docker-compose lives under pours/deployment/.
 # These targets bring up the Hindsight app layer (replay-engine + studio + Taskline),
-# seed demo data, and open the UIs. Provisioned dashboards/alerts live under
-# infra/dashboards and infra/alerts (import into SigNoz once; see README).
+# seed demo data, and open the UIs. `provision` installs the versioned resources
+# under infra/dashboards and infra/alerts through the SigNoz API.
 
 -include .env
 export
@@ -13,8 +13,12 @@ export
 SIGNOZ_URL       ?= http://localhost:8080
 SIGNOZ_API_KEY   ?=
 SIGNOZ_WEBHOOK_SECRET ?=
+SIGNOZ_WEBHOOK_URL ?= http://host.docker.internal:4123/hooks/signoz
 STUDIO_URL       ?= http://localhost:5173
 REPLAY_ENGINE    ?= http://localhost:4123
+HOST             ?= 127.0.0.1
+HINDSIGHT_API_TOKEN ?=
+HINDSIGHT_ALLOW_UNAUTHENTICATED_LOCALHOST ?= true
 RUNNER_URL       ?= http://127.0.0.1:4124
 TODO_URL         ?= http://localhost:4174
 HINDSIGHT_TODO_PROVIDER ?= ollama
@@ -27,7 +31,7 @@ LOG_DIR          ?= .hindsight-logs
 OPEN := $(shell command -v open >/dev/null 2>&1 && echo open || echo xdg-open)
 
 .DEFAULT_GOAL := demo
-.PHONY: demo doctor up dev seed seed-codex down help
+.PHONY: demo doctor provision provision-dry-run up dev seed seed-codex down help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,7 +39,7 @@ help: ## Show available targets
 
 # ---- the money target -------------------------------------------------------
 # Goal: from zero to a live, seeded demo in under 5 minutes.
-demo: doctor up seed ## Validate, build, start, seed, and open the demo (<5 min)
+demo: doctor provision up seed ## Validate, provision, build, start, seed, and open the demo (<5 min)
 	@echo ""
 	@echo "  Hindsight demo is live."
 	@echo "  SigNoz (system of record): $(SIGNOZ_URL)"
@@ -50,19 +54,25 @@ demo: doctor up seed ## Validate, build, start, seed, and open the demo (<5 min)
 doctor: ## Validate local prerequisites and SigNoz credentials
 	pnpm doctor
 
+provision: ## Idempotently install SigNoz channels, rules, and dashboards
+	pnpm provision:signoz -- --apply
+
+provision-dry-run: ## Show missing SigNoz resources without changing them
+	pnpm provision:signoz -- --dry-run
+
 up: ## Install deps, build, and start replay-engine, studio, and Taskline
 	@echo ">> Assuming SigNoz is already up at $(SIGNOZ_URL) (managed under pours/deployment)."
 	pnpm install
 	pnpm build
 	@mkdir -p $(LOG_DIR)
 	@echo ">> Starting reference runner on $(RUNNER_URL) ..."
-	OLLAMA_HOST='$(OLLAMA_HOST)' pnpm --filter @hindsight/demo-agents runner > $(LOG_DIR)/runner.log 2>&1 &
+	@nohup env OLLAMA_HOST='$(OLLAMA_HOST)' pnpm --filter @hindsight/demo-agents runner > $(LOG_DIR)/runner.log 2>&1 &
 	@echo ">> Starting AI to-do demo on $(TODO_URL) ..."
-	HINDSIGHT_TODO_PROVIDER='$(HINDSIGHT_TODO_PROVIDER)' OLLAMA_HOST='$(OLLAMA_HOST)' OLLAMA_MODEL='$(OLLAMA_MODEL)' pnpm --filter @hindsight/demo-agents todo > $(LOG_DIR)/todo.log 2>&1 &
+	@nohup env HINDSIGHT_TODO_PROVIDER='$(HINDSIGHT_TODO_PROVIDER)' OLLAMA_HOST='$(OLLAMA_HOST)' OLLAMA_MODEL='$(OLLAMA_MODEL)' pnpm --filter @hindsight/demo-agents todo > $(LOG_DIR)/todo.log 2>&1 &
 	@echo ">> Starting replay-engine on $(REPLAY_ENGINE) ..."
-	@SIGNOZ_API_KEY='$(SIGNOZ_API_KEY)' SIGNOZ_WEBHOOK_SECRET='$(SIGNOZ_WEBHOOK_SECRET)' HINDSIGHT_RUNNERS='$(HINDSIGHT_RUNNERS)' pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
+	@nohup env HOST='$(HOST)' HINDSIGHT_API_TOKEN='$(HINDSIGHT_API_TOKEN)' HINDSIGHT_ALLOW_UNAUTHENTICATED_LOCALHOST='$(HINDSIGHT_ALLOW_UNAUTHENTICATED_LOCALHOST)' SIGNOZ_API_KEY='$(SIGNOZ_API_KEY)' SIGNOZ_WEBHOOK_SECRET='$(SIGNOZ_WEBHOOK_SECRET)' HINDSIGHT_RUNNERS='$(HINDSIGHT_RUNNERS)' pnpm --filter @hindsight/replay-engine start > $(LOG_DIR)/replay-engine.log 2>&1 &
 	@echo ">> Starting studio on $(STUDIO_URL) ..."
-	pnpm --filter @hindsight/studio dev > $(LOG_DIR)/studio.log 2>&1 &
+	@nohup pnpm --filter @hindsight/studio dev > $(LOG_DIR)/studio.log 2>&1 &
 	@for url in "$(RUNNER_URL)/hindsight/capabilities" "$(REPLAY_ENGINE)/api/health" "$(STUDIO_URL)" "$(TODO_URL)"; do \
 		attempt=0; \
 		until curl --fail --silent --max-time 2 "$$url" >/dev/null; do \
