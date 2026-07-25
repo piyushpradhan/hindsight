@@ -10,12 +10,15 @@ import type {
   ForkRequest,
   ForkResult,
   Incident,
+  IncidentSortDirection,
+  IncidentSortField,
+  IncidentStatus,
   MockPolicy,
   Mutation,
   RunGraph,
 } from "@hindsight/shared";
 import type { Config } from "./config.js";
-import { SignozClient, SignozError } from "./signoz/client.js";
+import { SignozClient, SignozError, type ListRunsOptions } from "./signoz/client.js";
 import { InvalidTransitionError, IncidentStore } from "./incidents/store.js";
 import { buildRunGraph, summarizeSpans, type SpanInput } from "./rungraph/builder.js";
 import { compareRuns } from "./compare/diff.js";
@@ -43,9 +46,44 @@ export interface RouteDeps {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const RUN_LIST_CACHE_MS = 2_000;
+const INCIDENT_STATUSES: IncidentStatus[] = ["open", "verifying", "resolved", "dismissed"];
+const INCIDENT_SORT_FIELDS: IncidentSortField[] = [
+  "incident",
+  "severity",
+  "agent",
+  "detected",
+  "status",
+];
 
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, signoz, incidents } = deps;
+  const runSpanCache = new Map<
+    string,
+    { expiresAt: number; pending: Promise<SpanInput[]> }
+  >();
+  const cachedRunSpans = (options: ListRunsOptions): Promise<SpanInput[]> => {
+    const key = JSON.stringify([
+      options.agentId ?? null,
+      options.limit ?? null,
+      options.sinceMs ?? null,
+    ]);
+    const cached = runSpanCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.pending;
+    const pending = signoz.listRunSpans(options);
+    const entry = { expiresAt: Number.POSITIVE_INFINITY, pending };
+    runSpanCache.set(key, entry);
+    void pending.then(
+      () => {
+        entry.expiresAt = Date.now() + RUN_LIST_CACHE_MS;
+      },
+      () => undefined,
+    );
+    void pending.catch(() => {
+      if (runSpanCache.get(key)?.pending === pending) runSpanCache.delete(key);
+    });
+    return pending;
+  };
 
   app.get("/api/health", async () => ({ ok: true, signozAuthed: signoz.authed }));
   app.get("/api/capabilities", async () =>
@@ -59,7 +97,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const limit = clampInt(req.query.limit, 1, 200, 50);
     // fetch extra spans so grouping by trace still yields `limit` full runs
     const spans = await withSignozErrors(reply, () =>
-      signoz.listRunSpans({ agentId: req.query.agentId, limit: Math.min(limit * 10, 1000) }),
+      cachedRunSpans({ agentId: req.query.agentId, limit: Math.min(limit * 10, 1000) }),
     );
     if (!spans) return;
     const byTrace = groupByTrace(spans);
@@ -243,6 +281,37 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
   });
 
+  app.get<{
+    Querystring: {
+      limit?: string;
+      offset?: string;
+      q?: string;
+      traceId?: string;
+      status?: string;
+      severity?: string;
+      sort?: string;
+      direction?: string;
+    };
+  }>("/api/incidents/page", async (req) => {
+    const status = INCIDENT_STATUSES.includes(req.query.status as IncidentStatus)
+      ? (req.query.status as IncidentStatus)
+      : undefined;
+    const sort = INCIDENT_SORT_FIELDS.includes(req.query.sort as IncidentSortField)
+      ? (req.query.sort as IncidentSortField)
+      : "detected";
+    const direction: IncidentSortDirection = req.query.direction === "asc" ? "asc" : "desc";
+    return incidents.listPage({
+      limit: clampInt(req.query.limit, 1, 100, 50),
+      offset: clampInt(req.query.offset, 0, 1_000_000, 0),
+      query: req.query.q?.trim().slice(0, 200) || undefined,
+      traceId: req.query.traceId?.trim().slice(0, 256) || undefined,
+      status,
+      severity: req.query.severity?.trim().slice(0, 100) || undefined,
+      sort,
+      direction,
+    });
+  });
+
   app.get("/api/incidents", async () => incidents.list());
 
   app.post("/api/incidents", async (req, reply) => {
@@ -357,7 +426,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const spans = await withSignozErrors(reply, () =>
-      signoz.listRunSpans({ sinceMs: startOfDay.getTime() - DAY_MS, limit: 1000 }),
+      cachedRunSpans({ sinceMs: startOfDay.getTime() - DAY_MS, limit: 1000 }),
     );
     if (!spans) return;
     const runs = [...groupByTrace(spans).entries()].map(([traceId, traceSpans]) =>

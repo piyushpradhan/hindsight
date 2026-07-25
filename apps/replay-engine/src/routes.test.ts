@@ -150,6 +150,44 @@ test("manual resolution and unauthenticated webhooks are rejected", async (t) =>
   assert.equal(created.statusCode, 200);
   assert.equal(created.json().severity, "warning");
   assert.equal(created.json().failureCondition, "NotImplementedError");
+
+  const page = await app.inject({
+    method: "GET",
+    url: "/api/incidents/page?limit=1&q=recorded&status=open&sort=incident&direction=asc",
+  });
+  assert.equal(page.statusCode, 200);
+  assert.equal(page.json().items.length, 1);
+  assert.equal(page.json().items[0].traceId, FORK_TRACE);
+  assert.equal(page.json().hasMore, false);
+});
+
+test("run list requests share a short-lived SigNoz query", async (t) => {
+  const incidents = new IncidentStore(":memory:");
+  const signoz = new SignozClient({ baseUrl: "http://unused", apiKey: "test" });
+  let queries = 0;
+  signoz.listRunSpans = async () => {
+    queries += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return fixtureSpans();
+  };
+  const app = Fastify();
+  registerRoutes(app, { config: config(), signoz, incidents });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    incidents.close();
+  });
+
+  const responses = await Promise.all([
+    app.inject({ method: "GET", url: "/api/runs" }),
+    app.inject({ method: "GET", url: "/api/runs" }),
+    app.inject({ method: "GET", url: "/api/runs" }),
+  ]);
+  assert.ok(responses.every((response) => response.statusCode === 200));
+  assert.equal(queries, 1);
+
+  await app.inject({ method: "GET", url: "/api/runs" });
+  assert.equal(queries, 1);
 });
 
 async function testApp(

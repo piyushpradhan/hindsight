@@ -5,6 +5,10 @@ import type {
   ForkRequest,
   ForkResult,
   Incident,
+  IncidentPage,
+  IncidentSortDirection,
+  IncidentSortField,
+  IncidentStatus,
   RunGraph,
   RunSummary,
 } from "@hindsight/shared";
@@ -39,6 +43,7 @@ const API_BASE = ((import.meta.env.VITE_API_BASE as string | undefined) ?? "").r
  * localStorage), disable with ?mock=0. Production builds always use the live API.
  */
 const MOCK_KEY = "hindsight:mock";
+const INCIDENT_PAGE_SIZE = 50;
 if (import.meta.env.DEV) {
   try {
     const q = new URLSearchParams(window.location.search).get("mock");
@@ -187,8 +192,76 @@ export const api = {
           `/api/compare?original=${encodeURIComponent(original)}&fork=${encodeURIComponent(fork)}`,
         ),
 
-  listIncidents: () =>
-    MOCK_MODE ? mockResolve(mockIncidents) : request<Incident[]>("/api/incidents"),
+  listIncidentsPage: (options: {
+    offset?: number;
+    limit?: number;
+    query?: string;
+    traceId?: string;
+    status?: IncidentStatus;
+    severity?: string;
+    sort?: IncidentSortField;
+    direction?: IncidentSortDirection;
+  } = {}) => {
+    if (MOCK_MODE) {
+      const all = mockIncidents();
+      const query = options.query?.trim().toLowerCase();
+      const filtered = all.filter(
+        (incident) =>
+          (!query ||
+            incident.alertName.toLowerCase().includes(query) ||
+            incident.traceId.toLowerCase().includes(query)) &&
+          (!options.traceId || incident.traceId === options.traceId) &&
+          (!options.status || incident.status === options.status) &&
+          (!options.severity || (incident.severity ?? "unknown") === options.severity),
+      );
+      const field = options.sort ?? "detected";
+      const direction = options.direction === "asc" ? 1 : -1;
+      filtered.sort((a, b) => {
+        const value = (incident: Incident): string | undefined => {
+          switch (field) {
+            case "incident":
+              return incident.alertName;
+            case "severity":
+              return incident.severity;
+            case "agent":
+              return incident.agentId;
+            case "detected":
+              return incident.createdAt;
+            case "status":
+              return incident.status;
+          }
+        };
+        const left = value(a);
+        const right = value(b);
+        if (left === undefined) return right === undefined ? 0 : 1;
+        if (right === undefined) return -1;
+        return left.localeCompare(right, undefined, { sensitivity: "base" }) * direction;
+      });
+      const offset = options.offset ?? 0;
+      const limit = options.limit ?? INCIDENT_PAGE_SIZE;
+      return mockResolve(
+        (): IncidentPage => ({
+          items: filtered.slice(offset, offset + limit),
+          hasMore: offset + limit < filtered.length,
+          totalCount: all.length,
+          openCount: all.filter((incident) => incident.status === "open").length,
+          severities: [
+            ...new Set(all.map((incident) => incident.severity ?? "unknown")),
+          ].sort(),
+        }),
+      );
+    }
+    const params = new URLSearchParams();
+    if (options.offset) params.set("offset", String(options.offset));
+    if (options.limit) params.set("limit", String(options.limit));
+    if (options.query) params.set("q", options.query);
+    if (options.traceId) params.set("traceId", options.traceId);
+    if (options.status) params.set("status", options.status);
+    if (options.severity) params.set("severity", options.severity);
+    if (options.sort) params.set("sort", options.sort);
+    if (options.direction) params.set("direction", options.direction);
+    return request<IncidentPage>(`/api/incidents/page?${params}`);
+  },
 
   createIncident: (body: { traceId: string; agentId?: string; alertName?: string }) =>
     MOCK_MODE

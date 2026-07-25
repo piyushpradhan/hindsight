@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Link, useNavigate } from "react-router-dom";
-import type { Incident, IncidentStatus } from "@hindsight/shared";
+import type {
+  Incident,
+  IncidentPage,
+  IncidentSortField,
+  IncidentStatus,
+} from "@hindsight/shared";
 import { api } from "../api";
 import { shortId, timeAgo } from "../format";
 import { IncidentStatusBadge, SeverityBadge } from "../components/Badge";
 import { ErrorNote } from "../components/ErrorNote";
 import { PostmortemModal } from "../components/PostmortemModal";
 import {
-  compareValues,
   MobileSort,
   nextSort,
   SortableHeader,
   type SortState,
 } from "../components/SortableHeader";
 
-type IncidentSortKey = "incident" | "severity" | "agent" | "detected" | "status";
+const PAGE_SIZE = 50;
+type IncidentSortKey = IncidentSortField;
 
 /** Plain status transitions the engine allows (apps/replay-engine incidents/store.ts). */
 function transitionsFor(status: IncidentStatus): Array<{ label: string; to: IncidentStatus }> {
@@ -45,12 +50,15 @@ function nextAction(incident: Incident): string {
 }
 
 export function IncidentsScreen() {
-  const [incidents, setIncidents] = useState<Incident[] | null>(null);
+  const [incidentPage, setIncidentPage] = useState<IncidentPage | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("all");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<IncidentStatus | "all">("all");
   const [severity, setSeverity] = useState("all");
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState<SortState<IncidentSortKey>>({
     key: "detected",
     direction: "desc",
@@ -62,20 +70,56 @@ export function IncidentsScreen() {
   const undoTimer = useRef<number | undefined>(undefined);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPage(0);
+      setQuery(q.trim());
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+
+  const loadIncidents = useCallback(
+    () =>
+      api.listIncidentsPage({
+        offset: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        query: query || undefined,
+        status: status === "all" ? undefined : status,
+        severity: severity === "all" ? undefined : severity,
+        sort: sort.key,
+        direction: sort.direction,
+      }),
+    [page, query, severity, sort, status],
+  );
+
   const reload = useCallback(async () => {
-    setIncidents(await api.listIncidents());
-  }, []);
+    const result = await loadIncidents();
+    if (result.items.length === 0 && page > 0) {
+      setPage((current) => Math.max(0, current - 1));
+      return;
+    }
+    setIncidentPage(result);
+  }, [loadIncidents, page]);
 
   useEffect(() => {
     let alive = true;
-    api
-      .listIncidents()
-      .then((rows) => alive && setIncidents(rows))
-      .catch((e) => alive && setError(e));
+    setLoading(true);
+    loadIncidents()
+      .then((result) => {
+        if (!alive) return;
+        if (result.items.length === 0 && page > 0) {
+          setPage((current) => Math.max(0, current - 1));
+          return;
+        }
+        setIncidentPage(result);
+        setError(null);
+      })
+      .catch((e) => alive && setError(e))
+      .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadIncidents, page]);
 
   const patch = async (id: string, p: Partial<Incident>) => {
     setActionError(null);
@@ -125,48 +169,16 @@ export function IncidentsScreen() {
 
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
-  const needle = q.trim().toLowerCase();
-  const severityOptions = [
-    ...new Set((incidents ?? []).map((incident) => incident.severity ?? "unknown")),
-  ].sort();
-  const filteredIncidents = (incidents ?? [])
-    .filter(
-      (incident) =>
-        (status === "all" || incident.status === status) &&
-        (severity === "all" || (incident.severity ?? "unknown") === severity) &&
-        (!needle ||
-          [
-            incident.alertName,
-            incident.agentId,
-            incident.traceId,
-            incident.status,
-            incident.severity,
-            incident.notes,
-          ].some((value) => value?.toLowerCase().includes(needle))),
-    )
-    .sort((a, b) => {
-      const value = (incident: Incident) => {
-        switch (sort.key) {
-          case "incident":
-            return incident.alertName;
-          case "severity":
-            return incident.severity;
-          case "agent":
-            return incident.agentId;
-          case "detected":
-            return Date.parse(incident.createdAt);
-          case "status":
-            return incident.status;
-        }
-      };
-      return compareValues(value(a), value(b), sort.direction);
-    });
+  const incidents = incidentPage?.items ?? [];
   const sortHeader = (key: IncidentSortKey, label: string) => (
     <SortableHeader
       label={label}
       active={sort.key === key}
       direction={sort.direction}
-      onSort={() => setSort((current) => nextSort(current, key))}
+      onSort={() => {
+        setPage(0);
+        setSort((current) => nextSort(current, key));
+      }}
     />
   );
 
@@ -206,9 +218,9 @@ export function IncidentsScreen() {
 
       {error ? <ErrorNote error={error} /> : null}
       {actionError ? <ErrorNote error={actionError} /> : null}
-      {!incidents && !error && <div className="loading">loading incidents…</div>}
+      {!incidentPage && !error && <div className="loading">loading incidents…</div>}
 
-      {incidents && incidents.length === 0 && (
+      {incidentPage?.totalCount === 0 && (
         <div className="empty-onboard">
           <h2>No incidents yet</h2>
           <p>
@@ -221,8 +233,8 @@ export function IncidentsScreen() {
         </div>
       )}
 
-      {incidents && incidents.length > 0 && (
-        <div className="queue-section">
+      {incidentPage && incidentPage.totalCount > 0 && (
+        <div className="queue-section" aria-busy={loading}>
           <div className="queue-head">
             <div>
               <h2>Incident queue</h2>
@@ -230,7 +242,7 @@ export function IncidentsScreen() {
             </div>
             <div className="queue-tools">
               <span className="queue-count">
-                {incidents.filter((incident) => incident.status === "open").length} open
+                {incidentPage.openCount} open
               </span>
             </div>
           </div>
@@ -246,7 +258,10 @@ export function IncidentsScreen() {
             <select
               className="input table-filter"
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setPage(0);
+                setStatus(event.target.value as IncidentStatus | "all");
+              }}
               aria-label="Filter incidents by status"
             >
               <option value="all">All statuses</option>
@@ -258,11 +273,14 @@ export function IncidentsScreen() {
             <select
               className="input table-filter"
               value={severity}
-              onChange={(event) => setSeverity(event.target.value)}
+              onChange={(event) => {
+                setPage(0);
+                setSeverity(event.target.value);
+              }}
               aria-label="Filter incidents by severity"
             >
               <option value="all">All severities</option>
-              {severityOptions.map((option) => (
+              {incidentPage.severities.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -278,10 +296,13 @@ export function IncidentsScreen() {
                 { key: "status", label: "status" },
               ]}
               sort={sort}
-              onChange={setSort}
+              onChange={(next) => {
+                setPage(0);
+                setSort(next);
+              }}
             />
           </div>
-          {filteredIncidents.length === 0 ? (
+          {incidents.length === 0 ? (
             <div className="loading">no incidents match these filters</div>
           ) : (
             <div className="table-shell">
@@ -305,7 +326,7 @@ export function IncidentsScreen() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIncidents.map((inc) => {
+                  {incidents.map((inc) => {
                   const transitionActions = transitionsFor(inc.status);
                   const canPostmortem = inc.status === "resolved" && inc.verification?.verified;
                   const actionCount = transitionActions.length + (canPostmortem ? 1 : 0);
@@ -384,6 +405,27 @@ export function IncidentsScreen() {
                 </tbody>
               </table>
             </div>
+          )}
+          {(page > 0 || incidentPage.hasMore) && (
+            <nav className="table-pagination" aria-label="Incident pages">
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                disabled={page === 0 || loading}
+                onClick={() => setPage((current) => Math.max(0, current - 1))}
+              >
+                Previous
+              </button>
+              <span>Page {page + 1}</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                disabled={!incidentPage.hasMore || loading}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </button>
+            </nav>
           )}
         </div>
       )}

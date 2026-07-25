@@ -82,6 +82,53 @@ test("failed verification returns the incident to open", (t) => {
   assert.equal(reopened?.verification?.verified, false);
 });
 
+test("incident pages filter, sort, and stay bounded", (t) => {
+  const { store, cleanup } = tempStore();
+  t.after(cleanup);
+  store.create({
+    traceId: "trace-charlie",
+    agentId: "support",
+    alertName: "Charlie failure",
+    severity: "critical",
+  });
+  const alpha = store.create({
+    traceId: "trace-alpha",
+    agentId: "research",
+    alertName: "Alpha failure",
+    severity: "warning",
+  });
+  const beta = store.create({
+    traceId: "trace-beta",
+    agentId: "research",
+    alertName: "Beta failure",
+  });
+  store.update(beta.id, { status: "dismissed" });
+
+  const first = store.listPage({
+    limit: 1,
+    offset: 0,
+    sort: "incident",
+    direction: "asc",
+  });
+  assert.equal(first.items[0].id, alpha.id);
+  assert.equal(first.hasMore, true);
+  assert.equal(first.totalCount, 3);
+  assert.equal(first.openCount, 2);
+  assert.deepEqual(first.severities, ["critical", "unknown", "warning"]);
+
+  const filtered = store.listPage({
+    limit: 50,
+    offset: 0,
+    query: "trace-beta",
+    status: "dismissed",
+    severity: "unknown",
+    sort: "detected",
+    direction: "desc",
+  });
+  assert.deepEqual(filtered.items.map((incident) => incident.id), [beta.id]);
+  assert.equal(filtered.hasMore, false);
+});
+
 function tempStore(): { store: IncidentStore; cleanup: () => void } {
   const directory = mkdtempSync(join(tmpdir(), "hindsight-incidents-"));
   const store = new IncidentStore(join(directory, "test.db"));

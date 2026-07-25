@@ -1367,6 +1367,17 @@ textarea.input {
   white-space: nowrap;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  color: var(--color-warm-granite);
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+}
+
 .mobile-sort-controls {
   display: none;
 }

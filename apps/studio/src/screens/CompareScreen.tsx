@@ -94,16 +94,16 @@ export function CompareScreen() {
       api.compare(original, fork),
       api.getRun(original),
       api.getRun(fork),
-      api.listIncidents(),
+      api.listIncidentsPage({ traceId: original, limit: 20 }),
     ])
-      .then(([cmp, og, fg, incidents]) => {
+      .then(([cmp, og, fg, incidentPage]) => {
         if (!alive) return;
         setCompare(cmp);
         setOrigGraph(og);
         setForkGraph(fg);
         setVerification(
           stateVerification ??
-            incidents.find(
+            incidentPage.items.find(
               (incident) =>
                 incident.traceId === original && incident.forkTraceId === fork,
             )?.verification,

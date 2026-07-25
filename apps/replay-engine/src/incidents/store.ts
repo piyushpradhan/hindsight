@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import type {
   Incident,
   IncidentForkAttempt,
+  IncidentPage,
+  IncidentSortDirection,
+  IncidentSortField,
   IncidentStatus,
   IncidentVerification,
   Mutation,
@@ -58,6 +61,17 @@ export interface CreateIncidentInput {
   failureCondition?: string;
 }
 
+export interface IncidentListOptions {
+  limit: number;
+  offset: number;
+  query?: string;
+  traceId?: string;
+  status?: IncidentStatus;
+  severity?: string;
+  sort: IncidentSortField;
+  direction: IncidentSortDirection;
+}
+
 const PATCHABLE: Record<string, keyof Row> = {
   agentId: "agent_id",
   alertName: "alert_name",
@@ -101,6 +115,16 @@ export class IncidentStore {
       CREATE UNIQUE INDEX IF NOT EXISTS incidents_alert_trace_unique
       ON incidents(alert_fingerprint, trace_id)
       WHERE alert_fingerprint IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS incidents_created_at_id
+      ON incidents(created_at DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS incidents_alert_name_id
+      ON incidents(alert_name COLLATE NOCASE, id);
+      CREATE INDEX IF NOT EXISTS incidents_severity_id
+      ON incidents(severity, id);
+      CREATE INDEX IF NOT EXISTS incidents_agent_id
+      ON incidents(agent_id COLLATE NOCASE, id);
+      CREATE INDEX IF NOT EXISTS incidents_status_id
+      ON incidents(status, id);
     `);
   }
 
@@ -140,6 +164,60 @@ export class IncidentStore {
     return (
       this.db.prepare("SELECT * FROM incidents ORDER BY created_at DESC").all() as Row[]
     ).map(rowToIncident);
+  }
+
+  listPage(options: IncidentListOptions): IncidentPage {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (options.query) {
+      conditions.push("(alert_name LIKE ? OR trace_id LIKE ?)");
+      const query = `%${options.query}%`;
+      values.push(query, query);
+    }
+    if (options.traceId) {
+      conditions.push("trace_id = ?");
+      values.push(options.traceId);
+    }
+    if (options.status) {
+      conditions.push("status = ?");
+      values.push(options.status);
+    }
+    if (options.severity) {
+      conditions.push(options.severity === "unknown" ? "severity IS NULL" : "severity = ?");
+      if (options.severity !== "unknown") values.push(options.severity);
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
+    const column = INCIDENT_SORT_COLUMNS[options.sort];
+    const direction = options.direction === "asc" ? "ASC" : "DESC";
+    const nullsLast = options.sort === "severity" ? `${column} IS NULL ASC, ` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM incidents${where}
+         ORDER BY ${nullsLast}${column} ${direction}, id ${direction}
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...values, options.limit + 1, options.offset) as Row[];
+    const counts = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open
+         FROM incidents`,
+      )
+      .get() as { total: number; open: number | null };
+    const severities = (
+      this.db
+        .prepare(
+          "SELECT DISTINCT COALESCE(severity, 'unknown') AS severity FROM incidents ORDER BY severity",
+        )
+        .all() as Array<{ severity: string }>
+    ).map((row) => row.severity);
+    return {
+      items: rows.slice(0, options.limit).map(rowToIncident),
+      hasMore: rows.length > options.limit,
+      totalCount: counts.total,
+      openCount: counts.open ?? 0,
+      severities,
+    };
   }
 
   get(id: string): Incident | undefined {
@@ -307,6 +385,14 @@ export class IncidentStore {
     }
   }
 }
+
+const INCIDENT_SORT_COLUMNS: Record<IncidentSortField, string> = {
+  incident: "alert_name COLLATE NOCASE",
+  severity: "severity COLLATE NOCASE",
+  agent: "agent_id COLLATE NOCASE",
+  detected: "created_at",
+  status: "status",
+};
 
 function newIncident(input: CreateIncidentInput): Incident {
   return {

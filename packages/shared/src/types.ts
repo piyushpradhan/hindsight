@@ -263,6 +263,8 @@ export interface CompareResult {
 /* -------------------------------- incidents -------------------------------- */
 
 export type IncidentStatus = "open" | "verifying" | "resolved" | "dismissed";
+export type IncidentSortField = "incident" | "severity" | "agent" | "detected" | "status";
+export type IncidentSortDirection = "asc" | "desc";
 
 export interface IncidentVerification {
   verified: boolean;
@@ -308,6 +310,14 @@ export interface Incident {
   notes?: string;
 }
 
+export interface IncidentPage {
+  items: Incident[];
+  hasMore: boolean;
+  totalCount: number;
+  openCount: number;
+  severities: string[];
+}
+
 /* ---------------------------------- fleet ---------------------------------- */
 
 export interface AgentFleetStat {
@@ -329,6 +339,7 @@ export interface AgentFleetStat {
  *   POST   /api/forks        (ForkRequest) -> ForkResult
  *   GET    /api/compare?original=&fork=    -> CompareResult
  *   GET    /api/incidents                  -> Incident[]
+ *   GET    /api/incidents/page             -> IncidentPage
  *   POST   /api/incidents { traceId, agentId?, alertName? } -> Incident
  *   PATCH  /api/incidents/:id (Partial<Incident>)           -> Incident
  *   POST   /api/incidents/:id/postmortem   -> { markdown: string }
