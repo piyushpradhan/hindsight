@@ -9,6 +9,7 @@ import { createRecorder, hashToolArgs, type Recorder } from "@hindsight/recorder
 import { runAgent } from "./agent-loop.js";
 import { AGENTS } from "./agents.js";
 import { createAnthropicHttpProvider } from "./anthropic-provider.js";
+import { createOllamaProvider } from "./ollama-provider.js";
 import { createMockProvider, type PlanStep } from "./mock-provider.js";
 import { isSafe } from "./tools.js";
 import type { Completion, Provider, ToolCall } from "./types.js";
@@ -24,6 +25,7 @@ export interface DemoRunnerOptions {
   otlpHttpUrl: string;
   anthropicApiKey?: string;
   anthropicBaseUrl?: string;
+  ollamaBaseUrl?: string;
   recorderFactory?: () => Recorder;
 }
 
@@ -104,6 +106,7 @@ export async function executeRunnerFork(
         llm.provider,
         options.anthropicApiKey,
         options.anthropicBaseUrl,
+        options.ollamaBaseUrl,
       ),
       tools: spec.tools,
       system,
@@ -147,8 +150,10 @@ function providerFor(
   name: string | undefined,
   anthropicApiKey: string | undefined,
   anthropicBaseUrl?: string,
+  ollamaBaseUrl?: string,
 ): Provider {
   if (!name || name === "mock") return createMockProvider({ seed: 0 });
+  if (name === "ollama") return createOllamaProvider(ollamaBaseUrl);
   if (name === "anthropic") {
     if (!anthropicApiKey) throw new Error("ANTHROPIC_API_KEY is required for this recording");
     return createAnthropicHttpProvider(anthropicApiKey, anthropicBaseUrl);

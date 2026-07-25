@@ -26,9 +26,12 @@ export function RunsScreen() {
   return (
     <div className="page runs-page">
       <div className="page-head">
-        <div className="eyebrow">Replay archive</div>
-        <h1>Recorded runs</h1>
-        <p className="page-sub">Every agent run, reconstructable from SigNoz spans and payload logs.</p>
+        <div className="eyebrow">Recording archive</div>
+        <h1>All agent runs</h1>
+        <p className="page-sub">
+          Browse every recording from SigNoz. To investigate and resolve a failure, start in the
+          incident queue.
+        </p>
       </div>
 
       {error ? <ErrorNote error={error} /> : null}

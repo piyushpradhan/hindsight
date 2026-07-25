@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Taskline · Hindsight demo</title>
+    <style>
+      :root { color-scheme: light; font: 16px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; color: #1e2522; background: #f4f3ed; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      main { width: min(720px, calc(100% - 32px)); margin: 64px auto; }
+      header { display: flex; justify-content: space-between; gap: 24px; align-items: start; margin-bottom: 36px; }
+      h1 { font-size: clamp(2.4rem, 7vw, 4.5rem); line-height: .9; letter-spacing: -.07em; margin: 0 0 14px; }
+      p { color: #68706c; margin: 0; }
+      a { color: #286548; }
+      .mode { white-space: nowrap; padding: 7px 10px; border: 1px solid #d7d7ce; border-radius: 999px; font-size: 12px; }
+      form, .tasks, .result { background: #fff; border: 1px solid #deded5; border-radius: 18px; padding: 20px; box-shadow: 0 12px 30px rgba(36, 45, 40, .05); }
+      form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+      input { min-width: 0; border: 1px solid #c9cbc5; border-radius: 11px; padding: 13px 14px; font: inherit; }
+      button { border: 0; border-radius: 11px; padding: 12px 16px; background: #286548; color: white; font: inherit; font-weight: 650; cursor: pointer; }
+      button:disabled { opacity: .55; cursor: wait; }
+      .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 26px; }
+      .examples button { padding: 7px 10px; background: transparent; color: #5c6560; border: 1px solid #d7d7ce; font-size: 13px; font-weight: 500; }
+      .examples .fail { color: #9f3d31; border-color: #e8c8c2; }
+      .tasks { margin-top: 18px; }
+      .tasks h2 { margin: 0 0 12px; font-size: 15px; }
+      .task { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid #ecece5; }
+      .task:first-of-type { border-top: 0; }
+      .task button { width: 22px; height: 22px; padding: 0; border-radius: 6px; background: transparent; border: 1px solid #b8bcb5; color: #286548; }
+      .task.done .title { text-decoration: line-through; color: #969c98; }
+      .priority { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #767d79; }
+      .result { display: none; margin-top: 18px; }
+      .result.visible { display: block; }
+      .result.failure { border-color: #e8c8c2; }
+      .result strong { display: block; margin-bottom: 5px; }
+      .empty { padding: 18px 0 4px; color: #8b918d; }
+      @media (max-width: 560px) { main { margin: 32px auto; } header { display: block; } .mode { display: inline-block; margin-top: 16px; } form { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Taskline</h1>
+          <p>A tiny task agent. Every decision and tool call is recorded by Hindsight.</p>
+        </div>
+        <span class="mode" id="mode">checking mode…</span>
+      </header>
+
+      <form id="form">
+        <input id="prompt" aria-label="Task request" placeholder="Prepare the Hindsight demo tomorrow" autocomplete="off" />
+        <button id="submit">Ask agent</button>
+      </form>
+      <div class="examples">
+        <button data-example="Prepare the Hindsight demo tomorrow with high priority">Try a normal run</button>
+        <button class="fail" data-fail="true" data-example="Create a task with an impossible priority">Trigger a tool failure</button>
+      </div>
+
+      <section class="tasks">
+        <h2>Tasks</h2>
+        <div id="tasks" class="empty">No tasks yet.</div>
+      </section>
+      <section id="result" class="result" aria-live="polite"></section>
+    </main>
+    <script>
+      const form = document.querySelector("#form");
+      const prompt = document.querySelector("#prompt");
+      const submit = document.querySelector("#submit");
+      const tasks = document.querySelector("#tasks");
+      const result = document.querySelector("#result");
+      let failNext = false;
+
+      document.querySelectorAll("[data-example]").forEach((button) => button.addEventListener("click", () => {
+        prompt.value = button.dataset.example;
+        failNext = button.dataset.fail === "true";
+        prompt.focus();
+      }));
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const text = prompt.value.trim();
+        if (!text) return;
+        submit.disabled = true;
+        submit.textContent = "Running…";
+        result.className = "result";
+        try {
+          const response = await fetch("/api/triage", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ text, fail: failNext }),
+          });
+          const data = await response.json();
+          renderTasks(data.tasks || []);
+          const failed = data.outcome !== "success";
+          result.className = `result visible${failed ? " failure" : ""}`;
+          result.innerHTML = `<strong>${failed ? "Agent run failed as planned" : "Task created"}</strong>
+            <p>${escapeHtml(data.error || data.finalContent || "")}</p>
+            <p><a href="${data.studioRunUrl}" target="_blank">Inspect ${failed ? "and fork" : "the trace"} in Hindsight ↗</a></p>`;
+          prompt.value = "";
+          failNext = false;
+        } catch (error) {
+          result.className = "result visible failure";
+          result.textContent = error.message;
+        } finally {
+          submit.disabled = false;
+          submit.textContent = "Ask agent";
+        }
+      });
+
+      async function loadTasks() {
+        const data = await fetch("/api/tasks").then((response) => response.json());
+        document.querySelector("#mode").textContent =
+          data.mode === "ollama"
+            ? `AI · Ollama ${data.model}`
+            : data.mode === "anthropic"
+              ? "AI · Anthropic"
+              : "AI · offline demo";
+        renderTasks(data.tasks);
+      }
+
+      function renderTasks(rows) {
+        if (!rows.length) {
+          tasks.className = "empty";
+          tasks.textContent = "No tasks yet.";
+          return;
+        }
+        tasks.className = "";
+        tasks.innerHTML = rows.map((task) => `<div class="task ${task.done ? "done" : ""}">
+          <button aria-label="${task.done ? "Reopen" : "Complete"} ${escapeHtml(task.title)}" data-toggle="${task.id}">${task.done ? "✓" : ""}</button>
+          <span class="title">${escapeHtml(task.title)}${task.dueDate ? ` · ${task.dueDate}` : ""}</span>
+          <span class="priority">${task.priority}</span>
+        </div>`).join("");
+        document.querySelectorAll("[data-toggle]").forEach((button) => button.addEventListener("click", async () => {
+          await fetch(`/api/tasks/${button.dataset.toggle}/toggle`, { method: "POST" });
+          await loadTasks();
+        }));
+      }
+
+      function escapeHtml(value) {
+        const node = document.createElement("div");
+        node.textContent = String(value);
+        return node.innerHTML;
+      }
+
+      loadTasks();
+    </script>
+  </body>
+</html>

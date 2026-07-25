@@ -246,14 +246,27 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/api/incidents", async () => incidents.list());
 
   app.post("/api/incidents", async (req, reply) => {
-    const body = req.body as { traceId?: unknown; agentId?: unknown; alertName?: unknown } | null;
+    const body = req.body as {
+      traceId?: unknown;
+      runId?: unknown;
+      source?: unknown;
+      agentId?: unknown;
+      alertName?: unknown;
+      severity?: unknown;
+      failureCondition?: unknown;
+    } | null;
     if (!body || typeof body.traceId !== "string" || body.traceId === "") {
       return reply.code(400).send({ error: "invalid_body", detail: "traceId (string) is required" });
     }
     return incidents.create({
       traceId: body.traceId,
+      runId: typeof body.runId === "string" ? body.runId : undefined,
+      source: typeof body.source === "string" ? body.source : undefined,
       agentId: typeof body.agentId === "string" ? body.agentId : undefined,
       alertName: typeof body.alertName === "string" ? body.alertName : undefined,
+      severity: typeof body.severity === "string" ? body.severity : undefined,
+      failureCondition:
+        typeof body.failureCondition === "string" ? body.failureCondition : undefined,
     });
   });
 

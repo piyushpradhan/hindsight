@@ -31,6 +31,7 @@ const server = createServer(async (request, response) => {
         execution = executeRunnerFork(body, {
           otlpHttpUrl,
           anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+          ollamaBaseUrl: process.env.OLLAMA_HOST,
         });
         inFlight.set(body.idempotencyKey, execution);
         if (inFlight.size > 1_000) {

@@ -55,10 +55,16 @@ export function AppHeader() {
         </Link>
         <nav className="nav-links" aria-label="Primary navigation">
           <NavLink to="/incidents" className={({ isActive }) => (isActive ? "active" : "")}>
-            Incidents
+            <span>
+              Incident queue
+              <small>Resolve failures</small>
+            </span>
           </NavLink>
           <NavLink to="/runs" className={({ isActive }) => (isActive ? "active" : "")}>
-            Runs
+            <span>
+              All runs
+              <small>Browse recordings</small>
+            </span>
           </NavLink>
         </nav>
         <div className="sidebar-section">

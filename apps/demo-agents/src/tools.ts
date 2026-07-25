@@ -70,8 +70,55 @@ const sendReply: ToolDef = {
   },
 };
 
+const repoSearch: ToolDef = {
+  name: "repo_search",
+  description: "Search the repository for files, symbols, and existing patterns.",
+  effect: "safe",
+  async run(args) {
+    return {
+      query: String(args.query ?? ""),
+      files: Array.isArray(args.files) ? args.files : [],
+      summary: String(args.summary ?? "Relevant implementation paths found."),
+    };
+  },
+};
+
+const applyPatch: ToolDef = {
+  name: "apply_patch",
+  description: "Apply a reviewed source-code patch.",
+  effect: "side_effectful",
+  async run(args) {
+    return {
+      applied: true,
+      files: Array.isArray(args.files) ? args.files : [],
+      additions: Number(args.additions ?? 0),
+      deletions: Number(args.deletions ?? 0),
+      summary: String(args.summary ?? "Patch applied."),
+    };
+  },
+};
+
+const runChecks: ToolDef = {
+  name: "run_checks",
+  description: "Run the requested tests, type checks, or build checks.",
+  effect: "safe",
+  async run(args) {
+    if (args.error) {
+      const error = new Error(String(args.error));
+      error.name = String(args.errorType ?? "CheckFailedError");
+      throw error;
+    }
+    return {
+      passed: true,
+      checks: Array.isArray(args.checks) ? args.checks : ["typecheck"],
+      tests: Number(args.tests ?? 0),
+    };
+  },
+};
+
 export const RESEARCH_TOOLS: ToolRegistry = index([webSearch, calculator]);
 export const SUPPORT_TOOLS: ToolRegistry = index([ticketLookup, sendReply]);
+export const CODEX_TOOLS: ToolRegistry = index([repoSearch, applyPatch, runChecks]);
 export const ALL_TOOLS: ToolRegistry = index([webSearch, calculator, ticketLookup, sendReply]);
 
 /** Build a name→ToolDef registry from a list of tools. */

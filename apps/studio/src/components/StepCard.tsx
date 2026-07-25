@@ -101,9 +101,9 @@ export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, reg
           {step.error && <div className="step-error">{step.error}</div>}
 
           <div className="step-actions">
-            {/* The fork is the product's whole point, so its trigger is the ember
+            {/* Testing a branch is the product's whole point, so its trigger is the ember
                 primary on the step you're looking at — quiet ghost everywhere else,
-                so exactly one fork invitation reads as the peak (the failed step by
+                so exactly one test invitation reads as the peak (the failed step by
                 default). Once the panel is open it steps back to a close control. */}
             <button
               type="button"
@@ -111,10 +111,10 @@ export function StepCard({ step, selected, forkOpen, onSelect, onToggleFork, reg
               onClick={onToggleFork}
             >
               {forkOpen
-                ? "Close fork panel"
+                ? "Close test panel"
                 : selected
-                  ? (step.error ? "Fork to fix this step →" : "Fork from this step →")
-                  : "Fork from this step"}
+                  ? (step.error ? "Test a fix from this step →" : "Test a change from this step →")
+                  : "Test a change"}
             </button>
           </div>
           {forkOpen && forkPanel}

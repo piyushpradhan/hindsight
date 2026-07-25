@@ -6,9 +6,10 @@
 import type { Recorder } from "@hindsight/recorder";
 import { runAgent, type AgentResult, type RunAgentOptions } from "./agent-loop.js";
 import { createMockProvider, type PlanStep } from "./mock-provider.js";
-import { RESEARCH_TOOLS, SUPPORT_TOOLS } from "./tools.js";
+import { CODEX_TOOLS, RESEARCH_TOOLS, SUPPORT_TOOLS } from "./tools.js";
 import type { ChaosMode } from "./chaos.js";
 import type { Provider, ToolRegistry } from "./types.js";
+import { TODO_TOOLS } from "./todo.js";
 
 export interface AgentSpec {
   agentId: string;
@@ -47,9 +48,31 @@ export const SUPPORT_AGENT: AgentSpec = {
   ],
 };
 
+export const CODEX_AGENT: AgentSpec = {
+  agentId: "codex",
+  revision: "codex-hindsight@ac879e5",
+  system:
+    "You are Codex developing Hindsight. Inspect the repository, make the smallest correct change, and verify it.",
+  tools: CODEX_TOOLS,
+  task: "Continue developing Hindsight.",
+  plan: [{ kind: "final", content: "Hindsight development task complete." }],
+};
+
+export const TODO_AGENT: AgentSpec = {
+  agentId: "todo-triage",
+  revision: "todo-triage@1",
+  system:
+    "You manage a to-do list. Always call list_tasks first, then create exactly one useful task from the user's request. Valid priorities are low, medium, and high.",
+  tools: TODO_TOOLS,
+  task: "Add a useful task.",
+  plan: [{ kind: "final", content: "Task triage complete." }],
+};
+
 export const AGENTS: Record<string, AgentSpec> = {
   [RESEARCH_AGENT.agentId]: RESEARCH_AGENT,
   [SUPPORT_AGENT.agentId]: SUPPORT_AGENT,
+  [CODEX_AGENT.agentId]: CODEX_AGENT,
+  [TODO_AGENT.agentId]: TODO_AGENT,
 };
 
 export interface RunSpecOptions {

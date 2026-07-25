@@ -24,6 +24,7 @@ export type { MockProviderOptions, MockLlmRequest, PlanStep } from "./mock-provi
 export {
   RESEARCH_TOOLS,
   SUPPORT_TOOLS,
+  CODEX_TOOLS,
   ALL_TOOLS,
   index as indexTools,
   isSafe,
@@ -37,6 +38,8 @@ export type { RunAgentOptions, AgentResult } from "./agent-loop.js";
 export {
   RESEARCH_AGENT,
   SUPPORT_AGENT,
+  CODEX_AGENT,
+  TODO_AGENT,
   AGENTS,
   runAgentSpec,
 } from "./agents.js";
@@ -51,6 +54,15 @@ export {
 } from "./chaos.js";
 export type { ChaosMode } from "./chaos.js";
 
+export {
+  TODO_TOOLS,
+  buildTodoPlan,
+  listTodoTasks,
+  resetTodoTasks,
+  toggleTodoTask,
+} from "./todo.js";
+export type { TodoTask } from "./todo.js";
+
 // Optional real-provider seam.
 export {
   createAnthropicHttpProvider,
@@ -58,6 +70,8 @@ export {
   anthropicAvailable,
 } from "./anthropic-provider.js";
 export type { AnthropicLike } from "./anthropic-provider.js";
+
+export { createOllamaProvider } from "./ollama-provider.js";
 
 export { executeRunnerFork, SUPPORTED_MUTATIONS } from "./fork-runner.js";
 export type { DemoRunnerOptions } from "./fork-runner.js";

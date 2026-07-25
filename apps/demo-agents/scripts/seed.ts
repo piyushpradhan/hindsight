@@ -17,7 +17,7 @@ import {
 const TOTAL = 30;
 
 async function main(): Promise<void> {
-  const recorder = createRecorder({ recordPayloads: "always" });
+  const recorder = createRecorder({ recordPayloads: "always", payloadMode: "full" });
 
   const agents: AgentSpec[] = [RESEARCH_AGENT, SUPPORT_AGENT];
   // A handful of chaos runs sprinkled across the batch (indices → mode).

@@ -94,6 +94,18 @@ the SigNoz API:
 
 Other targets: `make up` (start stack), `make seed` (demo data), `make dev` (watch mode), `make down` (stop app processes; SigNoz untouched).
 
+### Taskline: AI to-do agent demo
+
+`make up` also starts Taskline at `http://localhost:4174`. A normal request
+records the agent's `list_tasks` and `create_task` calls. The failure example
+uses an invalid priority, opens a Hindsight incident, and links directly to the
+failed tool step so you can fork it with an overridden result.
+
+`make up` runs Taskline through local `gemma3:1b`; Ollama's local API needs no
+key. Taskline uses a JSON action protocol because Gemma 3 1B does not expose
+native tool calls. Set `HINDSIGHT_TODO_PROVIDER=offline` for the deterministic
+fallback, or use `anthropic` plus `ANTHROPIC_API_KEY`.
+
 To record against the real provider path instead of the explicit offline mock:
 
 ```bash

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { RunGraph } from "@hindsight/shared";
 import { api, signozTraceUrl } from "../api";
-import { fmtMs, fmtTokens, fmtUsd, runDurationMs, shortId } from "../format";
+import { shortId } from "../format";
 import { Badge, OutcomeBadge } from "../components/Badge";
 import { ErrorNote } from "../components/ErrorNote";
 import { StepScrubber } from "../components/StepScrubber";
@@ -102,7 +102,6 @@ export function RunDetailScreen() {
   const tools = [
     ...new Set(steps.filter((s) => s.kind === "tool").map((s) => s.toolName ?? s.name)),
   ].sort();
-  const duration = runDurationMs(run);
 
   return (
     <div className="page run-page">
@@ -113,37 +112,39 @@ export function RunDetailScreen() {
             {run.agentId} <span className="muted mono" style={{ fontSize: 16 }}>· {shortId(run.traceId)}</span>
           </h1>
           <span className="spacer" />
-          <Link to="/runs" className="trace-link">← all runs</Link>
+          <Link to={incidentId ? "/incidents" : "/runs"} className="trace-link">
+            ← {incidentId ? "incident queue" : "all runs"}
+          </Link>
           <a className="btn btn-ghost btn-sm" href={signozTraceUrl(run.traceId)} target="_blank" rel="noreferrer">
             Open in SigNoz ↗
           </a>
         </div>
-        {run.error && <div className="error-note">{run.error}</div>}
+        {run.error && (
+          <div className="run-error" role="alert">
+            <div className="run-error-title">
+              {run.error === "OllamaError" ? "Model request failed" : "Run failed"}
+            </div>
+            <div className="run-error-copy">
+              Inspect the failed step below, then test a different model, prompt, or tool result.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="run-sticky">
         <StepScrubber steps={steps} selected={selected} onSelect={handleSelect} />
-        <div className="summary-strip">
-          <OutcomeBadge outcome={run.outcome} />
-          <Badge>{steps.length} steps</Badge>
-          <Badge>{fmtTokens(run.totalTokens)} tokens</Badge>
-          <Badge>{fmtUsd(run.costUsd)}</Badge>
-          {duration !== null && <Badge>{fmtMs(duration)}</Badge>}
-          {run.taskId && <Badge>task {run.taskId}</Badge>}
-          {run.forkOf && (
-            <Badge tone="ember">
-              <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>
-            </Badge>
-          )}
-        </div>
-        <div className="scrubber-help">
-          <div className="scrubber-legend">
-            <span><b className="lg-circle">●</b> llm</span>
-            <span><b className="lg-square">■</b> tool</span>
-            <span><b className="lg-fail">●</b> failed</span>
+        <div className="run-strip-footer">
+          <div className="summary-strip">
+            <OutcomeBadge outcome={run.outcome} />
+            <span className="run-stat">{steps.length} {steps.length === 1 ? "step" : "steps"}</span>
+            {run.forkOf && (
+              <Badge tone="ember">
+                <Link to={`/runs/${run.forkOf}`}>fork of {shortId(run.forkOf)}</Link>
+              </Badge>
+            )}
           </div>
           <div className="kbd-hint">
-            <kbd>←</kbd> <kbd>→</kbd> step · <kbd>f</kbd> fork · <kbd>g</kbd> jump to failure · replay is free — no model calls, $0.00
+            <kbd>←</kbd> <kbd>→</kbd> navigate · <kbd>f</kbd> test · <kbd>g</kbd> failure
           </div>
         </div>
       </div>

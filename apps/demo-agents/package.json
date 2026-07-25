@@ -14,10 +14,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/fork-runner.test.ts",
+    "test": "tsx --test src/fork-runner.test.ts src/todo.test.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:codex": "tsx scripts/seed-codex.ts",
     "demo": "tsx scripts/demo.ts",
-    "runner": "tsx scripts/runner.ts"
+    "runner": "tsx scripts/runner.ts",
+    "todo": "tsx scripts/todo-server.ts"
   },
   "dependencies": {
     "@hindsight/recorder": "workspace:*",

@@ -41,13 +41,14 @@ export function TraceLookup({ onCreateIncident }: Props) {
       <form className="trace-lookup" onSubmit={open}>
         <input
           className="input"
-          placeholder="paste a trace_id — replay it, or file it as an incident…"
+          placeholder="Paste a SigNoz trace ID"
+          aria-label="SigNoz trace ID"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           spellCheck={false}
         />
         <button className="btn btn-ghost" type="submit">
-          Open trace
+          Open run
         </button>
         {onCreateIncident && (
           <button
@@ -56,7 +57,7 @@ export function TraceLookup({ onCreateIncident }: Props) {
             disabled={busy || !value.trim()}
             onClick={() => void create()}
           >
-            {busy ? "Creating…" : "+ Incident"}
+            {busy ? "Creating…" : "File incident"}
           </button>
         )}
       </form>

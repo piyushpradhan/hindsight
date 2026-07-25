@@ -20,11 +20,19 @@ const MUTATION_TYPES: Mutation["type"][] = [
 ];
 
 const MUTATION_LABELS: Record<Mutation["type"], string> = {
-  model_swap: "Swap model",
-  prompt_edit: "Edit prompt",
-  tool_output_override: "Override tool output",
-  params: "Params",
-  disable_tool: "Disable tool",
+  model_swap: "Try another model",
+  prompt_edit: "Change instructions",
+  tool_output_override: "Correct tool result",
+  params: "Change response settings",
+  disable_tool: "Skip a tool",
+};
+
+const MUTATION_HINTS: Record<Mutation["type"], string> = {
+  model_swap: "Run this step with a different AI model.",
+  prompt_edit: "Change the system instructions for this branch.",
+  tool_output_override: "Replace the recorded tool result with corrected JSON.",
+  params: "Adjust creativity or response length.",
+  disable_tool: "Run the branch without one tool.",
 };
 
 const MODEL_SUGGESTIONS = [
@@ -36,8 +44,8 @@ const MODEL_SUGGESTIONS = [
 ];
 
 const POLICY_HINTS: Record<MockPolicy, string> = {
-  strict: "All tools answered from recordings (args-hash match). Unmatched call → fail fast. Pure test of the model's reasoning.",
-  hybrid: "Hash match → mock. No match → run live if the tool is safe; side-effectful tools (send, write, pay) return a dry-run stub.",
+  strict: "Use recorded tool results only. Stop if a matching result is unavailable.",
+  hybrid: "Use recorded results when available; otherwise run safe tools and simulate side effects.",
 };
 
 interface Props {
@@ -133,11 +141,6 @@ export function ForkPanel({
     checkpoint?.complete === true &&
     mutationTypes.length > 0;
 
-  const replayNote =
-    step.index <= 0
-      ? "The registered agent runtime starts at step #0 with recorded tool dependencies."
-      : `The runner rebuilds recorded state before #${step.index}, then executes the branch with the selected policy.`;
-
   const buildMutation = (): Mutation => {
     switch (type) {
       case "model_swap": {
@@ -205,15 +208,8 @@ export function ForkPanel({
 
   return (
     <form className="fork-panel" onSubmit={submit}>
-      <div className="fork-context">
-        fork at step #{step.index} — state is rebuilt up to (not including) this step; exactly one
-        mutation is applied.
-      </div>
-
-      <div className="policy-hint">
-        checkpoint {checkpoint?.complete ? "complete" : "incomplete"} · schema{" "}
-        {checkpoint?.schemaVersion ?? "unknown"} · revision {agentRevision ?? "unknown"} · runner{" "}
-        {!capabilitiesLoaded ? "checking…" : runner?.available ? "available" : "unavailable"}
+      <div className="fork-intro">
+        Change one thing at step #{step.index}, then compare what happens.
       </div>
       {!checkpoint?.complete && (
         <div className="form-error">
@@ -232,11 +228,14 @@ export function ForkPanel({
         </div>
       )}
 
-      <div className="mutation-tabs">
+      <div className="fork-question">What do you want to change?</div>
+      <div className="mutation-tabs" role="tablist" aria-label="Choose what to change">
         {mutationTypes.map((t) => (
           <button
             key={t}
             type="button"
+            role="tab"
+            aria-selected={t === type}
             className={`mtab ${t === type ? "selected" : ""}`}
             onClick={() => setType(t)}
           >
@@ -244,11 +243,12 @@ export function ForkPanel({
           </button>
         ))}
       </div>
+      <div className="mutation-hint">{MUTATION_HINTS[type]}</div>
 
       <div className="fork-grid">
         {type === "model_swap" && (
           <div>
-            <label className="field-label" htmlFor="fork-model">model</label>
+            <label className="field-label" htmlFor="fork-model">model to try</label>
             <input
               id="fork-model"
               className="input"
@@ -268,7 +268,7 @@ export function ForkPanel({
 
         {type === "prompt_edit" && (
           <div style={{ gridColumn: "1 / -1" }}>
-            <label className="field-label" htmlFor="fork-prompt">new system prompt</label>
+            <label className="field-label" htmlFor="fork-prompt">new instructions</label>
             <textarea
               id="fork-prompt"
               className="input"
@@ -282,7 +282,7 @@ export function ForkPanel({
         {type === "tool_output_override" && (
           <div style={{ gridColumn: "1 / -1" }}>
             <label className="field-label" htmlFor="fork-output">
-              override output for step #{step.index} (JSON)
+              corrected tool result (JSON)
             </label>
             <textarea
               id="fork-output"
@@ -358,28 +358,33 @@ export function ForkPanel({
         )}
       </div>
 
-      <label className="field-label">mock policy</label>
-      <div className="radio-row">
-        {(["strict", "hybrid"] as MockPolicy[]).map((p) => (
-          <label key={p} className={`radio-pill ${policy === p ? "selected" : ""}`}>
-            <input
-              type="radio"
-              name="mock-policy"
-              value={p}
-              checked={policy === p}
-              onChange={() => setPolicy(p)}
-            />
-            {p}
-          </label>
-        ))}
-      </div>
-      <div className="policy-hint">{POLICY_HINTS[policy]}</div>
+      <details className="fork-advanced">
+        <summary>Advanced replay settings</summary>
+        <div className="fork-advanced-body">
+          <div className="field-label">tool replay behavior</div>
+          <div className="radio-row">
+            {(["strict", "hybrid"] as MockPolicy[]).map((p) => (
+              <label key={p} className={`radio-pill ${policy === p ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="mock-policy"
+                  value={p}
+                  checked={policy === p}
+                  onChange={() => setPolicy(p)}
+                />
+                {p}
+              </label>
+            ))}
+          </div>
+          <div className="policy-hint">{POLICY_HINTS[policy]}</div>
+        </div>
+      </details>
 
       <div className="fork-run">
         <button className="btn btn-ember" type="submit" disabled={busy || !canFork}>
-          {busy ? "Running fork…" : "Run fork"}
+          {busy ? "Testing change…" : "Test this change"}
         </button>
-        <span className="fork-run-note">{replayNote}</span>
+        <span className="fork-run-note">The original run stays unchanged.</span>
       </div>
       {error && <div className="form-error">{error}</div>}
     </form>

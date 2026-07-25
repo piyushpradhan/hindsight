@@ -107,6 +107,23 @@ test("manual resolution and unauthenticated webhooks are rejected", async (t) =>
     },
   });
   assert.equal(webhook.statusCode, 401);
+
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/incidents",
+    payload: {
+      traceId: FORK_TRACE,
+      runId: "seed-run",
+      source: "codex-seed",
+      agentId: "codex",
+      alertName: "recorded run failed",
+      severity: "warning",
+      failureCondition: "NotImplementedError",
+    },
+  });
+  assert.equal(created.statusCode, 200);
+  assert.equal(created.json().severity, "warning");
+  assert.equal(created.json().failureCondition, "NotImplementedError");
 });
 
 async function testApp(

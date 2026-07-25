@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import type {
   CompareResult,
   IncidentVerification,
@@ -48,7 +48,7 @@ function DeltaStat({ label, value, suffix }: { label: string; value: number | nu
 export function CompareScreen() {
   const [params] = useSearchParams();
   const location = useLocation();
-  const verification = (
+  const stateVerification = (
     location.state as { verification?: IncidentVerification } | null
   )?.verification;
   const original = params.get("original") ?? "";
@@ -56,23 +56,38 @@ export function CompareScreen() {
   const [compare, setCompare] = useState<CompareResult | null>(null);
   const [origGraph, setOrigGraph] = useState<RunGraph | null>(null);
   const [forkGraph, setForkGraph] = useState<RunGraph | null>(null);
+  const [verification, setVerification] = useState<IncidentVerification | undefined>(
+    stateVerification,
+  );
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!original || !fork) return;
     let alive = true;
-    Promise.all([api.compare(original, fork), api.getRun(original), api.getRun(fork)])
-      .then(([cmp, og, fg]) => {
+    Promise.all([
+      api.compare(original, fork),
+      api.getRun(original),
+      api.getRun(fork),
+      api.listIncidents(),
+    ])
+      .then(([cmp, og, fg, incidents]) => {
         if (!alive) return;
         setCompare(cmp);
         setOrigGraph(og);
         setForkGraph(fg);
+        setVerification(
+          stateVerification ??
+            incidents.find(
+              (incident) =>
+                incident.traceId === original && incident.forkTraceId === fork,
+            )?.verification,
+        );
       })
       .catch((e) => alive && setError(e));
     return () => {
       alive = false;
     };
-  }, [original, fork]);
+  }, [original, fork, stateVerification]);
 
   if (!original || !fork) {
     return (
@@ -107,18 +122,26 @@ export function CompareScreen() {
       <div className="page-head">
         <div className="eyebrow">Counterfactual comparison</div>
         <h1>Compare outcomes</h1>
+        <p className="page-sub">
+          See exactly what changed when Hindsight tested one alternate path.
+        </p>
       </div>
 
       {verification && (
-        <div className={verification.verified ? "fork-context" : "error-note"}>
-          <div className={verification.verified ? "" : "error-title"}>
+        <div className={`resolution-banner ${verification.verified ? "verified" : "unverified"}`}>
+          <div>
+            <div className="resolution-title">
             {verification.verified
-              ? "Incident resolution verified"
-              : "Fork completed, but incident resolution was not verified"}
+                ? "Fix verified"
+                : "Test completed, but the incident is still open"}
+            </div>
+            <div className="resolution-copy">
+              {verification.verified
+                ? "The tested branch succeeded and the original failure is gone."
+                : verification.reason}
+            </div>
           </div>
-          <div className={verification.verified ? "policy-hint" : "error-hint"}>
-            {verification.reason}
-          </div>
+          <Link className="btn btn-ghost btn-sm" to="/incidents">Back to incident queue</Link>
         </div>
       )}
 
@@ -127,7 +150,7 @@ export function CompareScreen() {
           <div className="verdict-title">{title}</div>
           <div className="verdict-outcomes">
             <OutcomeBadge outcome={compare.original.outcome} />
-            <span className="verdict-arrow">── fork ──▶</span>
+            <span className="verdict-arrow">── test ──▶</span>
             <OutcomeBadge outcome={compare.fork.outcome} />
           </div>
         </div>
@@ -197,6 +220,9 @@ export function CompareScreen() {
       )}
 
       <div className="row">
+        <Link className="btn btn-ghost" to="/incidents">
+          Back to incident queue
+        </Link>
         <a className="btn btn-ghost" href={signozTraceUrl(compare.original.traceId)} target="_blank" rel="noreferrer">
           Open original trace in SigNoz ↗
         </a>
