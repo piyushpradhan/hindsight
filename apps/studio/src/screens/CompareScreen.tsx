@@ -216,7 +216,6 @@ export function CompareScreen() {
             : a.forkIndex !== undefined
               ? forkSteps.get(a.forkIndex)
               : undefined;
-          const changedFields = (a.fields ?? []).filter((field) => field.status !== "same");
           return [
             <MiniStepCell
               key={`o-${i}`}
@@ -226,7 +225,6 @@ export function CompareScreen() {
             />,
             <span key={`s-${i}`} className={`status-tag status-${a.status}`}>
               {a.sharedPrefix ? "shared" : a.status}
-              {changedFields.length ? ` · ${changedFields.map((field) => field.field).join(", ")}` : ""}
             </span>,
             <MiniStepCell
               key={`f-${i}`}
