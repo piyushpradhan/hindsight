@@ -65,9 +65,11 @@ and measured resolution time.
 ## Quickstart
 
 SigNoz must already be running at `http://localhost:8080`. Create a SigNoz API
-key, choose a webhook bearer secret, then copy and fill the local environment:
+key, choose a webhook bearer secret, install and start
+[Ollama](https://ollama.com), then copy and fill the local environment:
 
 ```bash
+ollama pull gemma3:1b
 cp .env.example .env
 # Set SIGNOZ_API_KEY and SIGNOZ_WEBHOOK_SECRET in .env.
 make doctor
@@ -75,11 +77,13 @@ make demo
 ```
 
 `make doctor` verifies Node, pnpm, the Foundry files, SigNoz v0.133.x, OTLP
-ingestion, and both required credentials. `make demo` idempotently provisions
-the notification channel, four alert rules, and two dashboards; builds the
-workspace; waits for the reference runner (`:4124`), replay-engine (`:4123`),
-Studio (`:5173`), and Taskline (`:4174`) to become healthy; then records mixed
-demo runs.
+ingestion, both required credentials, the selected Taskline provider, and the
+configured Ollama model. To inspect the deterministic product flow without
+Ollama, set `HINDSIGHT_TODO_PROVIDER=offline` in `.env`; the real-provider proof
+still requires Ollama. `make demo` idempotently provisions the notification
+channel, four alert rules, and two dashboards; builds the workspace; waits for
+the reference runner (`:4124`), replay-engine (`:4123`), Studio (`:5173`), and
+Taskline (`:4174`) to become healthy; then records mixed demo runs.
 
 An incident appears only when an installed trace-correlated SigNoz rule
 delivers an authenticated webhook. Hindsight never inserts a fake incident in

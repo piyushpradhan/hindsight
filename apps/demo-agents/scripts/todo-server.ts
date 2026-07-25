@@ -15,7 +15,7 @@ const port = Number(process.env.HINDSIGHT_TODO_PORT ?? 4174);
 const engineUrl = (process.env.HINDSIGHT_ENGINE_URL ?? "http://localhost:4123").replace(/\/$/, "");
 const studioUrl = (process.env.HINDSIGHT_STUDIO_URL ?? "http://localhost:5173").replace(/\/$/, "");
 const providerMode = process.env.HINDSIGHT_TODO_PROVIDER ?? "offline";
-const ollamaModel = process.env.OLLAMA_MODEL ?? "gemma3";
+const ollamaModel = process.env.OLLAMA_MODEL ?? "gemma3:1b";
 const html = readFileSync(new URL("../todo/index.html", import.meta.url), "utf8");
 
 if (!["offline", "anthropic", "ollama"].includes(providerMode)) {
