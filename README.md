@@ -4,6 +4,17 @@
 [SigNoz](https://signoz.io), replays the captured evidence without live calls,
 and sends complete checkpoints back through the agent's registered runtime.
 
+**Three commands take you from a clean checkout to a working demo:**
+
+```bash
+make signoz
+make key
+make demo
+```
+
+`make signoz` starts the local SigNoz stack, `make key` wires Hindsight to it,
+and `make demo` runs the Taskline record/replay/fork flow.
+
 ![Hindsight turns a recorded failure into a testable branch](docs/assets/hindsight-landing.png)
 
 ---
